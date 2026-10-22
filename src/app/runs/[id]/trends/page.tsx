@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { int, num, pctChange } from "@/lib/format";
 import { getRecommendations, getRun } from "@/lib/queries";
+import { FLAGS } from "@/lib/rules";
 import { FlagBadge } from "../../../components/Badges";
 
 export const dynamic = "force-dynamic";
@@ -12,15 +13,64 @@ export default async function TrendsPage({ params }: { params: Promise<{ id: str
   if (!run) notFound();
   const recs = run.status === "completed" ? await getRecommendations(run.id) : [];
   const festival = recs[0]?.numbers.isFestivalMonth;
+  const samples = FLAGS.map((f) => recs.find((r) => r.flag === f)).filter((r): r is (typeof recs)[number] => !!r);
 
   return (
     <div className="stack">
-      <div>
-        <h1>Trends · run #{run.id}</h1>
-        <p className="muted">
-          Run date {run.runDate} · {festival ? "Festival month (Oct/Nov/Mar): expected demand = 4-wk avg × 1.25" : "Not a festival month"} ·
-          weeks of stock = (stock in hand + stock on order) ÷ weekly sales · <Link href={`/runs/${run.id}`}>Review</Link>
-        </p>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Trends · run #{run.id}</p>
+          <h1>The numbers behind each result</h1>
+          <div className="meta">
+            {festival && <span className="chip-soft">Festival month · expected demand = 4-week average ×1.25</span>}
+            <span className="faint small">Weeks of stock = (stock in hand + on order) ÷ expected weekly demand</span>
+          </div>
+        </div>
+        <Link className="btn" href={`/runs/${run.id}`}>Back to review</Link>
+      </div>
+
+      {samples.length > 0 && (
+        <section>
+          <div className="section-title">
+            <h2>One example per flag</h2>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Result</th>
+                  <th className="n">4-wk avg</th>
+                  <th className="n">12-wk avg</th>
+                  <th className="n">Change</th>
+                  <th className="n">Weeks of stock</th>
+                  <th>Healthy range</th>
+                  <th className="n">Qty</th>
+                  <th>Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                {samples.map((r) => (
+                  <tr key={r.id}>
+                    <td><b>{r.skuId}</b><div className="faint small">{r.skuName}</div></td>
+                    <td><FlagBadge flag={r.flag} /></td>
+                    <td className="n">{num(r.numbers.avg4)}</td>
+                    <td className="n">{num(r.numbers.avg12)}</td>
+                    <td className="n">{pctChange(r.numbers.ratio4to12)}</td>
+                    <td className="n"><b>{num(r.numbers.weeksOfStock, 2)}</b></td>
+                    <td className="small muted">{r.numbers.stockoutBelow}–{r.numbers.overstockAbove} weeks</td>
+                    <td className="n">{r.suggestedQty ?? "Raghav"}</td>
+                    <td className="small muted" style={{ maxWidth: 360 }}>{r.ruleFired}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <div className="section-title" style={{ marginBottom: -8 }}>
+        <h2>All SKUs</h2>
       </div>
       <div className="table-wrap">
         <table>

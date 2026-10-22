@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
 import { int, num, pctChange } from "@/lib/format";
 import type { RecRow } from "@/lib/queries";
-import { ACTION_LABEL, FLAG_LABEL, FLAGS, type Action, type Flag } from "@/lib/rules";
+import { FLAG_LABEL, FLAGS, type Action, type Flag } from "@/lib/rules";
 import { FlagBadge } from "./Badges";
 
 type SortKey = "sku" | "flag" | "wos" | "change" | "qty" | "decision";
@@ -12,6 +12,15 @@ type Editing = { recId: number; kind: "CHANGE_QTY" | "HOLD"; qty: string; reason
 
 const FLAG_ORDER: Record<Flag, number> = { JUDGMENT: 0, STOCKOUT: 1, HIGH_DEMAND: 2, OVERSTOCK: 3, OK: 4 };
 const DECISION_LABEL = { APPROVE: "Approved", CHANGE_QTY: "Qty changed", HOLD: "Held" } as const;
+
+function recommendation(action: Action, qty: number | null, unit: string): string {
+  switch (action) {
+    case "REORDER": return `Order ${qty?.toLocaleString("en-IN")} ${unit.toLowerCase()}`;
+    case "PAUSE": return "Pause next order";
+    case "NO_ACTION": return "No action";
+    case "REVIEW": return "Your call";
+  }
+}
 
 async function post(url: string, body?: unknown) {
   const res = await fetch(url, {
@@ -24,10 +33,24 @@ async function post(url: string, body?: unknown) {
   return json;
 }
 
-export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: number; recs: RecRow[]; editable: boolean; initialFlag: Flag | null }) {
+export type FlagFilter = Flag | "ORDER";
+
+export function ReviewTable({
+  runId,
+  recs,
+  editable,
+  initialFlag,
+  initialPending = false,
+}: {
+  runId: number;
+  recs: RecRow[];
+  editable: boolean;
+  initialFlag: FlagFilter | null;
+  initialPending?: boolean;
+}) {
   const router = useRouter();
-  const [flag, setFlag] = useState<Flag | null>(initialFlag);
-  const [pendingOnly, setPendingOnly] = useState(false);
+  const [flag, setFlag] = useState<FlagFilter | null>(initialFlag);
+  const [pendingOnly, setPendingOnly] = useState(initialPending);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "flag", dir: 1 });
   const [open, setOpen] = useState<Set<number>>(new Set());
@@ -42,7 +65,7 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
     const q = query.trim().toLowerCase();
     const filtered = recs.filter(
       (r) =>
-        (!flag || r.flag === flag) &&
+        (!flag || (flag === "ORDER" ? r.action === "REORDER" : r.flag === flag)) &&
         (!pendingOnly || !r.decision) &&
         (!q || r.skuId.toLowerCase().includes(q) || r.skuName.toLowerCase().includes(q)),
     );
@@ -100,6 +123,9 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
           <button className={`chip${flag === null ? " on" : ""}`} onClick={() => setFlag(null)}>
             All ({recs.length})
           </button>
+          <button className={`chip${flag === "ORDER" ? " on" : ""}`} onClick={() => setFlag(flag === "ORDER" ? null : "ORDER")}>
+            Order now ({recs.filter((r) => r.action === "REORDER").length})
+          </button>
           {FLAGS.map((f) => (
             <button key={f} className={`chip${flag === f ? " on" : ""}`} onClick={() => setFlag(flag === f ? null : f)}>
               {FLAG_LABEL[f]} ({recs.filter((r) => r.flag === f).length})
@@ -136,13 +162,9 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
             <tr>
               {header("sku", "SKU")}
               {header("flag", "Flag")}
-              <th>Action</th>
-              {header("qty", "Suggested qty", true)}
-              <th className="n">4-wk / 12-wk avg</th>
-              {header("change", "Change", true)}
-              <th className="n">Stock + on order</th>
+              {header("qty", "Recommendation")}
               {header("wos", "Weeks of stock", true)}
-              <th>Reason</th>
+              <th>Why</th>
               {header("decision", "Raghav's call")}
             </tr>
           </thead>
@@ -171,27 +193,27 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
                       )}
                       {r.perishability === "High" && <div className="tag" style={{ display: "inline-block", marginTop: 4 }}>perishable</div>}
                     </td>
-                    <td>{ACTION_LABEL[r.action as Action]}</td>
-                    <td className="n"><b>{r.suggestedQty ?? "–"}</b></td>
-                    <td className="n">{num(n.avg4)} / {num(n.avg12)}</td>
-                    <td className="n">{pctChange(n.ratio4to12)}</td>
-                    <td className="n">{n.stockOnHand === null ? "missing" : int(n.stockOnHand + n.onOrder)}</td>
-                    <td className="n">
-                      <b>{num(n.weeksOfStock, 2)}</b>
-                      <div className="muted small">limits {n.stockoutBelow}–{n.overstockAbove}</div>
+                    <td className="nowrap">
+                      <b>{recommendation(r.action as Action, r.suggestedQty, r.unitOfMeasure)}</b>
                     </td>
-                    <td className="reason">
+                    <td className="n">
+                      <b>{num(n.weeksOfStock, 1)}</b>
+                      <div className="faint small">healthy {n.stockoutBelow}–{n.overstockAbove}</div>
+                    </td>
+                    <td className="reason small">
                       {r.reason}
-                      <div className="row small" style={{ gap: 6, marginTop: 4 }}>
-                        <span className="tag">{r.reasonSource === "llm" ? "Claude" : "template"}</span>
-                        <button
-                          className="small link"
-                          title="Tell us the reason text is wrong (feeds the AI kill criterion)"
-                          onClick={() => act(() => post(`/api/recommendations/${r.id}/reason-feedback`, { wrong: !r.reasonMarkedWrong }))}
-                        >
-                          {r.reasonMarkedWrong ? "Marked wrong ✕" : "Reason wrong?"}
-                        </button>
-                      </div>
+                      {r.reasonSource === "llm" && (
+                        <div className="row small" style={{ gap: 6, marginTop: 4 }}>
+                          <span className="tag">Claude</span>
+                          <button
+                            className="small link"
+                            title="Tell us the reason text is wrong (feeds the AI kill criterion)"
+                            onClick={() => act(() => post(`/api/recommendations/${r.id}/reason-feedback`, { wrong: !r.reasonMarkedWrong }))}
+                          >
+                            {r.reasonMarkedWrong ? "Marked wrong ✕" : "Reason wrong?"}
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="decision">
                       {r.decision && !ed && (
@@ -255,7 +277,7 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
                   </tr>
                   {isOpen && (
                     <tr className="sub">
-                      <td colSpan={10}>
+                      <td colSpan={6}>
                         <div className="grid cols-2">
                           <div>
                             <b>Rule fired:</b> {r.ruleFired}
@@ -266,6 +288,8 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
                             </ol>
                           </div>
                           <div className="kv">
+                            <span className="muted">4-week average / week</span><span>{num(n.avg4)}</span>
+                            <span className="muted">12-week average / week</span><span>{num(n.avg12)} ({pctChange(n.ratio4to12)})</span>
                             <span className="muted">Stock on hand</span><span>{int(n.stockOnHand)}</span>
                             <span className="muted">Stock on order</span><span>{int(n.onOrder)}</span>
                             <span className="muted">Festival uplift</span><span>{n.isFestivalMonth ? `×${n.upliftFactor}` : "none"}</span>
@@ -285,7 +309,7 @@ export function ReviewTable({ runId, recs, editable, initialFlag }: { runId: num
             })}
             {!rows.length && (
               <tr>
-                <td colSpan={10} className="muted">No recommendations match the filter.</td>
+                <td colSpan={6} className="muted">No recommendations match the filter.</td>
               </tr>
             )}
           </tbody>

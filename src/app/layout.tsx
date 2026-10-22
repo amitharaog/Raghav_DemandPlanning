@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Logo } from "./components/Logo";
+import { NavLinks } from "./components/NavLinks";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,15 +14,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <header className="topbar">
-          <Link href="/" className="brand">
-            Fresh<span>roots</span> Demand Planning
-          </Link>
-          <nav>
-            <Link href="/">Dashboard</Link>
-            <Link href="/review">Raghav&apos;s review</Link>
-            <Link href="/trends">Trends</Link>
-            <Link href="/history">Run history</Link>
-          </nav>
+          <div className="topbar-inner">
+            <Link href="/" className="brand" aria-label="Freshroots demand planning home">
+              <Logo />
+            </Link>
+            <NavLinks />
+          </div>
         </header>
         <main className="wrap">{children}</main>
       </body>

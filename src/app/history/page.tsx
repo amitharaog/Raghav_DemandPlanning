@@ -9,9 +9,14 @@ export default async function HistoryPage() {
   const runs = await listRunStats(200);
   return (
     <div className="stack">
-      <div>
-        <h1>Run history</h1>
-        <p className="muted">Every run, scheduled or manual. Overrides = rule results Raghav changed or held.</p>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">History</p>
+          <h1>Every run</h1>
+          <div className="meta">
+            <span className="faint small">Scheduled Mon and Thu at 06:00 IST, plus any Run now. Overrides are rule results Raghav changed or held.</span>
+          </div>
+        </div>
       </div>
       <div className="table-wrap">
         <table>
@@ -22,13 +27,9 @@ export default async function HistoryPage() {
               <th>Started (IST)</th>
               <th>Trigger</th>
               <th>Status</th>
-              <th className="n">SKUs</th>
               {FLAGS.map((f) => <th key={f} className="n">{FLAG_LABEL[f]}</th>)}
               <th className="n">Decided</th>
               <th className="n">Overrides</th>
-              <th className="n">Held</th>
-              <th className="n">Zoho CSVs</th>
-              <th>Reasons</th>
               <th>Notes</th>
             </tr>
           </thead>
@@ -38,19 +39,15 @@ export default async function HistoryPage() {
                 <td>{r.status === "completed" ? <Link href={`/runs/${r.id}`}>#{r.id}</Link> : `#${r.id}`}</td>
                 <td>{r.runDate}</td>
                 <td>{istDateTime(r.startedAt)}</td>
-                <td>{r.trigger}</td>
-                <td>{r.status}</td>
-                <td className="n">{r.skuCount ?? "–"}</td>
+                <td className="muted">{r.trigger === "schedule" ? "Scheduled" : r.trigger === "manual" ? "Run now" : "Setup"}</td>
+                <td><span className={`pill ${r.status === "completed" ? "s-ok" : "s-kill"}`}><span className="dot" />{r.status === "completed" ? "Completed" : r.status === "halted" ? "Stopped" : "Failed"}</span></td>
                 {FLAGS.map((f) => <td key={f} className="n">{r.flagCounts?.[f] ?? "–"}</td>)}
                 <td className="n">{r.status === "completed" ? `${r.decided}/${r.skuCount}` : "–"}</td>
                 <td className="n">{r.status === "completed" ? r.overrides : "–"}</td>
-                <td className="n">{r.status === "completed" ? r.held : "–"}</td>
-                <td className="n">{r.zohoExports}</td>
-                <td className="small">{r.reasonsReport ? (r.reasonsReport.mode === "llm" ? "Claude" : "templates") : "–"}</td>
-                <td className="small" style={{ maxWidth: 360 }}>{r.haltReasons[0] ?? r.error ?? ""}</td>
+                <td className="small muted" style={{ maxWidth: 360 }}>{r.haltReasons[0] ?? r.error ?? ""}</td>
               </tr>
             ))}
-            {!runs.length && <tr><td colSpan={17} className="muted">No runs yet.</td></tr>}
+            {!runs.length && <tr><td colSpan={13} className="muted">No runs yet.</td></tr>}
           </tbody>
         </table>
       </div>

@@ -47,7 +47,7 @@ export function killCall(runs: RunStats[], outcomes: PilotOutcome[], today: stri
   const last = ordered[ordered.length - 1];
   checks.push({
     gate: "Data",
-    name: "Latest run passed the data checks",
+    name: "Data checks on the latest run",
     value: last ? last.status : "no runs",
     limit: "completed",
     status: !last ? "no-data" : last.status === "completed" ? "ok" : streak >= PILOT.maxConsecutiveHalts ? "kill" : "watch",
