@@ -106,6 +106,14 @@ The SAP load is a CLI step for the pilot: IT runs `npm run load` after each SAP
 export, before 06:00 on Monday and Thursday. If they forget, the data checks halt
 the run rather than forecasting on old numbers.
 
+### Vercel + Neon (what the live demo uses)
+
+Set `DATABASE_URL` (Neon's direct connection string, not the `-pooler` one: the run
+lock needs a stable session), `RUN_DATE_OVERRIDE=2026-10-22` and `SEED_ON_BUILD=true`.
+Vercel's build runs `vercel-build`, which applies migrations, loads the seed and demo
+data and makes one forecast run if there is none. All of it is safe to repeat. Remove
+`SEED_ON_BUILD` once real SAP data is loaded, so a deploy never reloads the seed files.
+
 ## Going live with Zoho
 
 Replace the body of `submitPurchaseOrders()` in `src/lib/zoho.ts` with Zoho

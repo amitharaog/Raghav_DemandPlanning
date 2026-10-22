@@ -61,7 +61,7 @@ export default async function Dashboard() {
             <b>{istDateTime(nextScheduledRun().toISOString())} IST</b>.
           </p>
         </div>
-        <RunNowButton defaultDate={todayIST()} />
+        <RunNowButton defaultDate={process.env.RUN_DATE_OVERRIDE?.trim() || todayIST()} />
       </div>
 
       <section className={`banner ${call.verdict}`}>
