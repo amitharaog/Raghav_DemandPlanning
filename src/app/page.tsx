@@ -8,6 +8,8 @@ import {
   getRun,
   listPilotOutcomes,
   listRunStats,
+  getZohoStatus,
+  lastZohoResults,
   listZohoExports,
   statsFor,
 } from "@/lib/queries";
@@ -15,7 +17,7 @@ import { todayIST } from "@/lib/weeks";
 import { StatusBadge } from "./components/Badges";
 import { PilotOutcomeForm } from "./components/PilotOutcomeForm";
 import { RunNowButton } from "./components/RunNowButton";
-import { ZohoExportButton } from "./components/ZohoExportButton";
+import { ZohoConnection, ZohoSendButtons } from "./components/ZohoPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -29,17 +31,21 @@ async function dataStatus() {
   return { stockAsOf, skus };
 }
 
-export default async function Overview() {
-  const [data, runs, outcomes, latestCompletedId] = await Promise.all([
+export default async function Overview({ searchParams }: { searchParams: Promise<{ zoho?: string; zoho_msg?: string }> }) {
+  const { zoho: zohoFlag, zoho_msg: zohoMsg } = await searchParams;
+  const [data, runs, outcomes, latestCompletedId, zoho] = await Promise.all([
     dataStatus(),
     listRunStats(50),
     listPilotOutcomes(),
     getLatestCompletedRunId(),
+    getZohoStatus(),
   ]);
   const latest = runs[0] ?? null;
   const run = latestCompletedId ? await getRun(latestCompletedId) : null;
   const recs = run ? await getRecommendations(run.id) : [];
   const exports = run ? await listZohoExports(run.id) : [];
+  const zohoResults = run ? await lastZohoResults(run.id) : [];
+  const sentToZoho = zohoResults.filter((r) => r.status !== "failed").length;
   const stats = run ? statsFor(run, recs, exports.length) : null;
   const call = killCall(runs, outcomes, todayIST());
   const defaultDate = process.env.RUN_DATE_OVERRIDE?.trim() || todayIST();
@@ -85,6 +91,19 @@ export default async function Overview() {
   return (
     <div className="stack">
       {head}
+
+      {zohoFlag === "connected" && (
+        <div className="banner CONTINUE">
+          <span className="ico">✓</span>
+          <span>Zoho is connected{zoho.organizationName ? ` to ${zoho.organizationName}` : ""}. Approved orders can now go to Zoho as drafts.</span>
+        </div>
+      )}
+      {zohoFlag === "error" && (
+        <div className="banner KILL">
+          <span className="ico">!</span>
+          <span>Zoho could not be connected: {zohoMsg ?? "unknown error"}</span>
+        </div>
+      )}
 
       {halted && (
         <div className="banner KILL">
@@ -168,12 +187,13 @@ export default async function Overview() {
           <div className="card-head">
             <div>
               <h2>Purchase orders for Zoho</h2>
-              <p className="muted small">Only approved items with a quantity go out.</p>
+              <p className="muted small">
+                Only approved items with a quantity go out{zoho.connected ? ", as drafts procurement still issues" : ""}.
+              </p>
             </div>
-            <ZohoExportButton runId={run.id} disabled={!stats.poLines} />
           </div>
           {stats.poLines ? (
-            <div className="row" style={{ gap: 28 }}>
+            <div className="row" style={{ gap: 28, marginBottom: 14 }}>
               <div>
                 <div className="big-number">{stats.poLines}</div>
                 <div className="faint small">order lines</div>
@@ -188,14 +208,11 @@ export default async function Overview() {
               </div>
             </div>
           ) : (
-            <p className="muted">Nothing approved yet. Approved orders will appear here.</p>
+            <p className="muted" style={{ marginBottom: 14 }}>Nothing approved yet. Approved orders will appear here.</p>
           )}
-          {exports[0] && (
-            <p className="small faint" style={{ marginTop: 12 }}>
-              Last CSV {istDateTime(exports[0].createdAt)} ·{" "}
-              <a href={`/api/zoho-exports/${exports[0].id}`}>Download again</a>
-            </p>
-          )}
+          <ZohoSendButtons runId={run.id} lines={stats.poLines} zoho={zoho} lastResults={zohoResults} />
+          <hr className="divider" />
+          <ZohoConnection zoho={zoho} />
         </div>
       </section>
 
@@ -235,7 +252,9 @@ export default async function Overview() {
           <li>
             <span className={`node ${exports.length ? "" : "todo"}`}>{exports.length ? "✓" : "6"}</span>
             <span className="name">Zoho POs</span>
-            <span className="desc">{exports.length ? "CSV generated" : "Not sent yet"}</span>
+            <span className="desc">
+              {sentToZoho ? `${sentToZoho} draft PO${sentToZoho === 1 ? "" : "s"} in Zoho` : exports.length ? "CSV generated" : "Not sent yet"}
+            </span>
           </li>
         </ol>
       </section>

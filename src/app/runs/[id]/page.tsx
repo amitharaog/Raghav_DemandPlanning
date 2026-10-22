@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { istDateTime } from "@/lib/format";
-import { getLatestCompletedRunId, getRecommendations, getRun, listZohoExports, statsFor } from "@/lib/queries";
+import { getLatestCompletedRunId, getRecommendations, getRun, getZohoStatus, lastZohoResults, listZohoExports, statsFor } from "@/lib/queries";
 import { FLAGS, type Flag } from "@/lib/rules";
 import { ReviewTable, type FlagFilter } from "../../components/ReviewTable";
-import { ZohoExportButton } from "../../components/ZohoExportButton";
+import { ZohoSendButtons } from "../../components/ZohoPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,13 @@ export default async function ReviewPage({
       </div>
     );
   }
-  const [recs, exports, latestId] = await Promise.all([getRecommendations(run.id), listZohoExports(run.id), getLatestCompletedRunId()]);
+  const [recs, exports, latestId, zoho, zohoResults] = await Promise.all([
+    getRecommendations(run.id),
+    listZohoExports(run.id),
+    getLatestCompletedRunId(),
+    getZohoStatus(),
+    lastZohoResults(run.id),
+  ]);
   const stats = statsFor(run, recs, exports.length);
   const editable = latestId === run.id;
   const initialFlag: FlagFilter | null = flag === "ORDER" ? "ORDER" : FLAGS.includes(flag as Flag) ? (flag as Flag) : null;
@@ -66,7 +72,7 @@ export default async function ReviewPage({
           </div>
         </div>
         <div className="stack-sm" style={{ justifyItems: "end" }}>
-          <ZohoExportButton runId={run.id} disabled={!stats.poLines} />
+          <ZohoSendButtons runId={run.id} lines={stats.poLines} zoho={zoho} lastResults={zohoResults} />
           <span className="faint small">
             {stats.poLines ? `${stats.poLines} approved lines will go to Zoho` : "Approve items to create purchase orders"}
           </span>

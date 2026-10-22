@@ -114,10 +114,29 @@ Vercel's build runs `vercel-build`, which applies migrations, loads the seed and
 data and makes one forecast run if there is none. All of it is safe to repeat. Remove
 `SEED_ON_BUILD` once real SAP data is loaded, so a deploy never reloads the seed files.
 
-## Going live with Zoho
+## Zoho Inventory
 
-Replace the body of `submitPurchaseOrders()` in `src/lib/zoho.ts` with Zoho
-Inventory API calls (create each PO as Draft). Before the first CSV import,
-check `ZOHO_PO_COLUMNS` against the sample file in your Zoho org's import screen,
-and confirm vendor names match Zoho's vendor list (pilot default: the SKU's
-distributor).
+Approved orders can go to Zoho in two ways, both from the Purchase orders card:
+
+- **Send to Zoho as drafts** (when Zoho is connected): one draft PO per vendor, matched
+  to Zoho by vendor name and SKU. A PO number is never sent twice. Procurement still
+  issues each draft in Zoho. If a vendor or SKU isn't in Zoho, that PO shows "Not sent"
+  with the reason.
+- **Download CSV**: the Zoho purchase-order import file, always available.
+
+**Connect once:**
+1. In the Zoho API Console (api-console.zoho.in), use a *Server-based Application* client with
+   redirect URI `https://<your-app>.vercel.app/api/zoho/callback`. (A *Self Client* works too:
+   generate a code with the scopes below and paste it under "Using a Self Client?".)
+2. Set `ZOHO_CLIENT_ID` and `ZOHO_CLIENT_SECRET` in Vercel and redeploy.
+3. Press **Connect Zoho** on the Overview and approve. The refresh token is stored encrypted
+   (key derived from the client secret, so rotating the secret means connecting again).
+
+Scopes: `ZohoInventory.purchaseorders.CREATE, ZohoInventory.purchaseorders.READ,
+ZohoInventory.contacts.READ, ZohoInventory.items.READ, ZohoInventory.settings.READ`.
+Optional: `ZOHO_ACCOUNTS_URL` (default `https://accounts.zoho.in`), `ZOHO_ORG_ID` (default: the
+first Zoho Inventory organization).
+
+**Sync open POs** pulls issued, not-yet-received POs from Zoho into stock on order for the
+next run (ordered minus received, drafts excluded). The code lives in `src/lib/zohoApi.ts`;
+`submitPurchaseOrders()` in `src/lib/zoho.ts` is still the single place POs are sent from.

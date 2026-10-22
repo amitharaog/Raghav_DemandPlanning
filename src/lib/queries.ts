@@ -5,6 +5,7 @@ import { goesToPurchaseOrder, isOverride, validateDecision, type Decided, type D
 import type { ReasonsReport } from "./reasons";
 import type { Flag, Numbers } from "./rules";
 import { buildPurchaseOrderLines, submitPurchaseOrders, type ApprovedLine } from "./zoho";
+import { fetchOpenPurchaseOrders, ZohoError, zohoSession } from "./zohoApi";
 
 export type RunRow = {
   id: number;
@@ -187,17 +188,70 @@ export function approvedLines(recs: RecRow[]): ApprovedLine[] {
     }));
 }
 
-export async function exportToZoho(runId: number, by: string) {
+export async function exportToZoho(runId: number, by: string, channel: "csv" | "zoho" = "csv") {
   const run = await getRun(runId);
   if (!run || run.status !== "completed") throw new UserError("Only a completed run can be exported.");
   const lines = buildPurchaseOrderLines(runId, run.runDate, approvedLines(await getRecommendations(runId)));
   if (!lines.length) throw new UserError("No approved orders with a quantity above 0 yet.");
-  return submitPurchaseOrders(runId, lines, by);
+  try {
+    return await submitPurchaseOrders(runId, lines, by, channel);
+  } catch (err) {
+    if (err instanceof ZohoError) throw new UserError(err.message);
+    throw err;
+  }
+}
+
+export async function lastZohoResults(runId: number) {
+  const { rows } = await getPool().query(
+    `select r.po_number, r.vendor_name, r.status, r.zoho_po_number, r.error, r.created_at
+       from zoho_po_results r join zoho_exports e on e.id = r.export_id
+      where e.run_id = $1 and e.id = (select max(id) from zoho_exports where run_id = $1 and channel = 'zoho')
+      order by r.id`,
+    [runId],
+  );
+  return rows.map((r) => ({
+    poNumber: r.po_number as string,
+    vendorName: r.vendor_name as string,
+    status: r.status as "created" | "failed" | "skipped",
+    zohoPoNumber: r.zoho_po_number as string | null,
+    error: r.error as string | null,
+  }));
+}
+
+/** Replaces the open-PO snapshot for today with what Zoho says is on order. */
+export async function syncOpenPosFromZoho(asOfDate: string) {
+  const s = await zohoSession().catch((err) => {
+    throw new UserError((err as Error).message);
+  });
+  let lines;
+  try {
+    lines = await fetchOpenPurchaseOrders(s);
+  } catch (err) {
+    throw new UserError((err as Error).message);
+  }
+  const known = new Set((await getPool().query(`select sku_id from skus`)).rows.map((r) => r.sku_id as string));
+  const kept = lines.filter((l) => known.has(l.sku));
+  await withTransaction(async (c) => {
+    await c.query(`delete from open_purchase_orders where as_of_date = $1`, [asOfDate]);
+    for (const l of kept) {
+      await c.query(
+        `insert into open_purchase_orders (po_number, sku_id, qty_on_order, expected_date, as_of_date) values ($1,$2,$3,$4,$5)
+         on conflict (po_number, sku_id, as_of_date) do update set qty_on_order = open_purchase_orders.qty_on_order + excluded.qty_on_order`,
+        [l.poNumber, l.sku, l.qtyOnOrder, l.expectedDate, asOfDate],
+      );
+    }
+  });
+  return {
+    poLines: kept.length,
+    units: kept.reduce((n, l) => n + l.qtyOnOrder, 0),
+    skus: new Set(kept.map((l) => l.sku)).size,
+    ignoredSkus: [...new Set(lines.filter((l) => !known.has(l.sku)).map((l) => l.sku))],
+  };
 }
 
 export async function listZohoExports(runId: number) {
   const { rows } = await getPool().query(
-    `select id, created_at, created_by, po_count, line_count from zoho_exports where run_id = $1 order by id desc`,
+    `select id, created_at, created_by, po_count, line_count, channel from zoho_exports where run_id = $1 order by id desc`,
     [runId],
   );
   return rows.map((r) => ({
@@ -206,6 +260,7 @@ export async function listZohoExports(runId: number) {
     createdBy: r.created_by as string,
     poCount: r.po_count as number,
     lineCount: r.line_count as number,
+    channel: r.channel as "csv" | "zoho",
   }));
 }
 
@@ -280,4 +335,10 @@ export async function addPilotOutcome(o: { periodLabel: string; stockoutLossLakh
       [o.periodLabel.trim(), o.stockoutLossLakh, o.writeoffLossLakh, by],
     ),
   );
+}
+
+export async function getZohoStatus() {
+  const { getZohoConnection, zohoConfigured } = await import("./zohoApi");
+  const conn = await getZohoConnection();
+  return { configured: zohoConfigured(), connected: !!conn, organizationName: conn?.organizationName ?? null };
 }

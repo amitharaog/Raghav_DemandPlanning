@@ -229,3 +229,6 @@ input[type="number"] { width: 84px; }
 .stack > *, .grid > *, .actions > *, .steps > * { min-width: 0; }
 .stack, .grid { grid-template-columns: minmax(0, 1fr); }
 .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+.po-results { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.po-results li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.divider { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
