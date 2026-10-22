@@ -4,7 +4,7 @@ import { userFrom } from "@/lib/auth";
 import { UserError } from "@/lib/queries";
 import { executeRun } from "@/lib/run";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   return handle(async () => {

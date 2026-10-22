@@ -12,7 +12,11 @@ export function getPool(): pg.Pool {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) throw new Error("DATABASE_URL is not set (see .env.example)");
-    pool = new pg.Pool({ connectionString, max: 5 });
+    // Hosted Postgres (Supabase) needs TLS; a local database usually has none.
+    // Supabase signs with its own CA, so the certificate chain isn't verified.
+    const local = /@(localhost|127\.0\.0\.1)(:|\/)/.test(connectionString);
+    const ssl = local || process.env.DATABASE_SSL === "off" ? undefined : { rejectUnauthorized: false };
+    pool = new pg.Pool({ connectionString, ssl, max: 3 });
   }
   return pool;
 }

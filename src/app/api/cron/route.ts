@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { executeRun } from "@/lib/run";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
