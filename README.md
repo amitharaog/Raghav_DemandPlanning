@@ -92,8 +92,13 @@ Weeks of stock = (stock in hand + stock on order) ÷ expected weekly demand.
 
 ## Deploy (Vercel + Supabase)
 
-1. Create a Supabase project; copy the pooled connection string into `DATABASE_URL`.
-2. Run `npm run db:migrate` once against it, then `npm run load -- <folder>`.
+1. Create a Supabase project. Either:
+   - **One paste:** open SQL Editor → New query, paste `supabase/setup.sql`, Run. It creates
+     the tables (with row-level security on, so Supabase's public API can't read them) and
+     loads the seed data, the demo SKUs, run 1 with Raghav's decisions and the Zoho export.
+   - **Or from a terminal:** set `DATABASE_URL` to the project's connection string, then
+     `npm run db:migrate && npm run load -- seed-data seed-data/demo`.
+2. Copy the connection string (Connect → Session pooler) into `DATABASE_URL` for Vercel.
 3. Import the repo into Vercel. Set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `CRON_SECRET`, `APP_PASSWORD`.
 4. `vercel.json` schedules `/api/cron` at `30 0 * * 1,4` (UTC) = Mon & Thu 06:00 IST.
 
