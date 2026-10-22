@@ -10,9 +10,11 @@ let pool: pg.Pool | undefined;
 
 export function getPool(): pg.Pool {
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error("DATABASE_URL is not set (see .env.example)");
-    // Hosted Postgres (Supabase) needs TLS; a local database usually has none.
+    const raw = process.env.DATABASE_URL;
+    if (!raw) throw new Error("DATABASE_URL is not set (see .env.example)");
+    // Neon adds channel_binding=require, which node-postgres doesn't read; TLS still applies.
+    const connectionString = raw.replace(/([?&])channel_binding=[^&]*&?/, "$1").replace(/[?&]$/, "");
+    // Hosted Postgres (Neon, Supabase) needs TLS; a local database usually has none.
     // Supabase signs with its own CA, so the certificate chain isn't verified.
     const local = /@(localhost|127\.0\.0\.1)(:|\/)/.test(connectionString);
     const ssl = local || process.env.DATABASE_SSL === "off" ? undefined : { rejectUnauthorized: false };
