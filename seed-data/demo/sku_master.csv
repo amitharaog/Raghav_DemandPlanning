@@ -1,0 +1,4 @@
+SKU_ID,SKU_Name,Category,Perishability,Standard_Reorder_Qty,Unit_of_Measure,Distributor_ID,Launch_Date
+SKU016,Freshroots Millet Chips 60g (DEMO),Snack,Low,200,Units,DIST002,2026-09-07
+SKU017,Freshroots Jaggery Powder 500g (DEMO),Staple,Low,100,Units,DIST004,
+SKU018,Freshroots Masala Makhana 70g (DEMO),Snack,Low,150,Units,DIST003,
