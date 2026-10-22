@@ -1,0 +1,6 @@
+Purchase Order Date,Purchase Order Number,Vendor Name,Reference#,Item Name,SKU,Quantity,Rate,Usage unit,Status,Notes
+2026-10-22,FR-20261022-R1-DIST001,NutriFlow Distributors,Demand run #1,Freshroots Mango Drink 200ml,SKU001,750,,Units,Draft,Approved as recommended
+2026-10-22,FR-20261022-R1-DIST001,NutriFlow Distributors,Demand run #1,Freshroots Peanut Butter 300g,SKU013,120,,Units,Draft,Approved as recommended
+2026-10-22,FR-20261022-R1-DIST002,GrainPath Logistics,Demand run #1,Freshroots Brown Rice 1kg,SKU003,300,,Units,Draft,Approved as recommended
+2026-10-22,FR-20261022-R1-DIST002,GrainPath Logistics,Demand run #1,Freshroots Almond Milk 500ml,SKU004,300,,Units,Draft,Qty changed by Raghav: 150 only covers 1.5 weeks of festival demand
+2026-10-22,FR-20261022-R1-DIST002,GrainPath Logistics,Demand run #1,Freshroots Millet Chips 60g (DEMO),SKU016,200,,Units,Draft,Qty changed by Raghav: New launch still ramping; one standard order

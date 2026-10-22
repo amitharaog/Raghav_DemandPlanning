@@ -1,5 +1,5 @@
 // Builds small in-memory snapshots for tests: no database needed.
-import type { Snapshot, SnapshotSku } from "@/lib/snapshot";
+import { lastCompleteWeekStart, type Snapshot, type SnapshotSku } from "@/lib/snapshot";
 import { addDays } from "@/lib/weeks";
 
 export const RUN_DATE = "2026-10-22"; // Thursday; last complete week starts 2026-10-12
@@ -39,7 +39,7 @@ export function snapshot(cases: SkuCase[], opts: { festival?: boolean; runDate?:
   const weeks = weeksEndingAt(LAST_WEEK, maxLen);
   const snap: Snapshot = {
     runDate,
-    lastCompleteWeek: LAST_WEEK,
+    lastCompleteWeek: lastCompleteWeekStart(runDate),
     weeks,
     skus: [],
     sales: {},
