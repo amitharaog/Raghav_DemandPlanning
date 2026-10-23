@@ -140,3 +140,7 @@ first Zoho Inventory organization).
 **Sync open POs** pulls issued, not-yet-received POs from Zoho into stock on order for the
 next run (ordered minus received, drafts excluded). The code lives in `src/lib/zohoApi.ts`;
 `submitPurchaseOrders()` in `src/lib/zoho.ts` is still the single place POs are sent from.
+
+**Setting up Zoho for the first time:** `docs/zoho-import/vendors.csv` and `items.csv` hold all
+4 distributors and 18 SKUs from the SAP masters. Import them with Purchases → Vendors → Import File
+and Items → Import File (vendors first). The purchase rate is a placeholder of ₹1; change it to the real cost.
