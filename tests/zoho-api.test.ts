@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { groupByPo, buildPurchaseOrderLines, type ApprovedLine } from "@/lib/zoho";
-import { createDraftPurchaseOrder, decrypt, encrypt, openPoLines, authorizeUrl, normaliseAccountsServer } from "@/lib/zohoApi";
+import { createDraftPurchaseOrder, findItemId, decrypt, encrypt, openPoLines, authorizeUrl, normaliseAccountsServer } from "@/lib/zohoApi";
 
 beforeEach(() => {
   process.env.ZOHO_CLIENT_ID = "1000.TESTCLIENT";
@@ -90,6 +90,19 @@ describe("draft purchase orders", () => {
     await expect(
       createDraftPurchaseOrder(s, { poNumber: "X", vendorName: "A", date: "2026-10-22", reference: "r", notes: "", lines: [] }),
     ).rejects.toThrow(/You are not authorized \(code 57\)/);
+  });
+
+  it("finds an item by reading the item list when Zoho's search misses it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = new URL(url);
+      const body = u.searchParams.get("search_text")
+        ? { code: 0, items: [] }
+        : { code: 0, items: [{ item_id: "OLD", sku: "SKU001", status: "inactive" }, { item_id: "I1", sku: "sku001", status: "active" }], page_context: { has_more_page: false } };
+      return new Response(JSON.stringify(body));
+    }));
+    const s = { apiDomain: "https://www.zohoapis.in", accessToken: "tok", organizationId: "ORG1" };
+    await expect(findItemId(s, "SKU001")).resolves.toBe("I1");
+    await expect(findItemId(s, "SKU999")).resolves.toBeNull();
   });
 
   it("says how to fix an item that has only sales information", async () => {

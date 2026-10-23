@@ -240,9 +240,24 @@ export async function findVendorId(s: Session, vendorName: string): Promise<stri
   return hit?.contact_id ?? null;
 }
 
+type ZohoItem = { item_id: string; sku?: string; status?: string };
+
 export async function findItemId(s: Session, sku: string): Promise<string | null> {
-  const r = await zohoGet<{ items?: { item_id: string; sku?: string }[] }>(s, "/items", { search_text: sku });
-  return (r.items ?? []).find((i) => same(i.sku, sku))?.item_id ?? null;
+  const r = await zohoGet<{ items?: ZohoItem[] }>(s, "/items", { search_text: sku });
+  const hit = (r.items ?? []).find((i) => same(i.sku, sku) && i.status !== "inactive");
+  if (hit) return hit.item_id;
+  // Zoho's search index can lag behind an import, so fall back to reading the item list itself.
+  for (let page = 1; page <= 20; page++) {
+    const p = await zohoGet<{ items?: ZohoItem[]; page_context?: { has_more_page?: boolean } }>(s, "/items", {
+      filter_by: "Status.All", per_page: "200", page: String(page),
+    });
+    const matches = (p.items ?? []).filter((i) => same(i.sku, sku));
+    const active = matches.find((i) => i.status !== "inactive");
+    if (active) return active.item_id;
+    if (matches.length) throw new ZohoError(`Item with SKU ${sku} is inactive in Zoho Inventory. Mark it as active, then send again.`);
+    if (!p.page_context?.has_more_page) break;
+  }
+  return null;
 }
 
 export type DraftPo = {
