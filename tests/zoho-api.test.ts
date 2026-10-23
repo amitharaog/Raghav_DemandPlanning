@@ -108,3 +108,17 @@ describe("open purchase orders -> stock on order", () => {
     ]);
   });
 });
+
+describe("OAuth state (no cookie needed)", () => {
+  it("accepts its own fresh state and rejects tampered, missing or old ones", async () => {
+    const { makeState, checkState } = await import("@/lib/zohoApi");
+    const now = 1_800_000_000_000;
+    const s = makeState(now);
+    expect(checkState(s, now + 5 * 60_000)).toBe("ok");
+    expect(checkState(s, now + 31 * 60_000)).toBe("expired");
+    expect(checkState(s.replace(/.$/, (c) => (c === "A" ? "B" : "A")), now)).toBe("bad-signature");
+    expect(checkState(null, now)).toBe("missing");
+    process.env.ZOHO_CLIENT_SECRET = "someone-else";
+    expect(checkState(s, now)).toBe("bad-signature");
+  });
+});

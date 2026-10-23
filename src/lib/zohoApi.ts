@@ -79,6 +79,26 @@ export async function disconnectZoho(): Promise<void> {
 
 // --- OAuth ---------------------------------------------------------------------
 
+const STATE_MAX_AGE_MS = 30 * 60 * 1000;
+
+/** A signed, self-checking OAuth state: no cookie needed to verify it on the way back. */
+export function makeState(now = Date.now()): string {
+  const ts = String(now);
+  const sig = crypto.createHmac("sha256", key()).update(`zoho-state:${ts}`).digest("base64url");
+  return `${ts}.${sig}`;
+}
+
+export function checkState(state: string | null, now = Date.now()): "ok" | "missing" | "bad-signature" | "expired" {
+  if (!state) return "missing";
+  const [ts, sig] = state.split(".");
+  if (!ts || !sig) return "bad-signature";
+  const expected = crypto.createHmac("sha256", key()).update(`zoho-state:${ts}`).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return "bad-signature";
+  return now - Number(ts) > STATE_MAX_AGE_MS || Number(ts) > now + 60_000 ? "expired" : "ok";
+}
+
 export function authorizeUrl(redirectUri: string, state: string, accountsServer = DEFAULT_ACCOUNTS_SERVER): string {
   const p = new URLSearchParams({
     scope: ZOHO_SCOPES,
