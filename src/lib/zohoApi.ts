@@ -15,7 +15,14 @@ export const ZOHO_SCOPES = [
 
 export const DEFAULT_ACCOUNTS_SERVER = process.env.ZOHO_ACCOUNTS_URL || "https://accounts.zoho.in";
 
-export class ZohoError extends Error {}
+export class ZohoError extends Error {
+  constructor(message: string, readonly code?: number) {
+    super(message);
+  }
+}
+
+/** Zoho: "You cannot add items which have only Sales information in a Purchase Order." */
+const ITEM_NOT_PURCHASABLE = 29032;
 
 export function zohoConfigured(): boolean {
   return !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET);
@@ -212,7 +219,7 @@ async function zohoCall<T>(s: Session, method: "GET" | "POST", path: string, que
   });
   const json = (await res.json().catch(() => ({}))) as T & ZohoReply;
   if (!res.ok || (json.code !== undefined && json.code !== 0)) {
-    throw new ZohoError(`Zoho ${method} ${path} failed: ${json.message ?? res.statusText} (code ${json.code ?? res.status})`);
+    throw new ZohoError(`Zoho ${method} ${path} failed: ${json.message ?? res.statusText} (code ${json.code ?? res.status})`, json.code);
   }
   return json;
 }
@@ -262,6 +269,15 @@ export async function createDraftPurchaseOrder(s: Session, po: DraftPo): Promise
     date: po.date,
     notes: po.notes,
     line_items: lineItems,
+  }).catch((e) => {
+    if (e instanceof ZohoError && e.code === ITEM_NOT_PURCHASABLE) {
+      throw new ZohoError(
+        `Zoho won't put ${po.lines.map((l) => l.sku).join(", ")} on a PO: the item has no purchase information. ` +
+          "In Zoho, edit the item, tick Purchase Information, add a cost price, save, then send again.",
+        e.code,
+      );
+    }
+    throw e;
   });
   if (!r.purchaseorder) throw new ZohoError("Zoho accepted the request but returned no purchase order.");
   return { id: r.purchaseorder.purchaseorder_id, number: r.purchaseorder.purchaseorder_number };

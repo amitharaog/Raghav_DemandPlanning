@@ -91,6 +91,22 @@ describe("draft purchase orders", () => {
       createDraftPurchaseOrder(s, { poNumber: "X", vendorName: "A", date: "2026-10-22", reference: "r", notes: "", lines: [] }),
     ).rejects.toThrow(/You are not authorized \(code 57\)/);
   });
+
+  it("says how to fix an item that has only sales information", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = new URL(url);
+      const body = u.pathname.endsWith("/contacts")
+        ? { code: 0, contacts: [{ contact_id: "V1", contact_name: "A" }] }
+        : u.pathname.endsWith("/items")
+          ? { code: 0, items: [{ item_id: "I1", sku: "SKU001" }] }
+          : { code: 29032, message: "You cannot add items which have only Sales information in a Purchase Order." };
+      return new Response(JSON.stringify(body), { status: u.pathname.endsWith("/purchaseorders") ? 400 : 200 });
+    }));
+    const s = { apiDomain: "https://www.zohoapis.in", accessToken: "tok", organizationId: "ORG1" };
+    await expect(
+      createDraftPurchaseOrder(s, { poNumber: "X", vendorName: "A", date: "2026-10-22", reference: "r", notes: "", lines: [{ sku: "SKU001", quantity: 1 }] }),
+    ).rejects.toThrow(/SKU001 .*tick Purchase Information/);
+  });
 });
 
 describe("open purchase orders -> stock on order", () => {
