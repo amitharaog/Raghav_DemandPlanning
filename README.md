@@ -143,4 +143,4 @@ next run (ordered minus received, drafts excluded). The code lives in `src/lib/z
 
 **Setting up Zoho for the first time:** `docs/zoho-import/vendors.csv` and `items.csv` hold all
 4 distributors and 18 SKUs from the SAP masters. Import them with Purchases → Vendors → Import File
-and Items → Import File (vendors first). The purchase rate is a placeholder of ₹1; change it to the real cost.
+and Items → Import File (vendors first). Cost and selling prices are placeholders of ₹1; change them to the real figures.
