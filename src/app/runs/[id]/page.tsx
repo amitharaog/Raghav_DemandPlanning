@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { istDateTime } from "@/lib/format";
-import { getLatestCompletedRunId, getRecommendations, getRun, getZohoStatus, lastZohoResults, listZohoExports, statsFor } from "@/lib/queries";
+import { getLatestCompletedRunId, getRecommendations, getRun, getZohoStatus, lastZohoResults, listZohoExports, previousCalls, statsFor } from "@/lib/queries";
 import { FLAGS, type Flag } from "@/lib/rules";
 import { ReviewTable, type FlagFilter } from "../../components/ReviewTable";
 import { ZohoSendButtons } from "../../components/ZohoPanel";
@@ -16,10 +16,10 @@ export default async function ReviewPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ flag?: string; pending?: string }>;
+  searchParams: Promise<{ flag?: string; pending?: string; q?: string }>;
 }) {
   const { id } = await params;
-  const { flag, pending } = await searchParams;
+  const { flag, pending, q } = await searchParams;
   const run = await getRun(Number(id));
   if (!run) notFound();
   if (run.status !== "completed") {
@@ -45,12 +45,13 @@ export default async function ReviewPage({
       </div>
     );
   }
-  const [recs, exports, latestId, zoho, zohoResults] = await Promise.all([
+  const [recs, exports, latestId, zoho, zohoResults, previous] = await Promise.all([
     getRecommendations(run.id),
     listZohoExports(run.id),
     getLatestCompletedRunId(),
     getZohoStatus(),
     lastZohoResults(run.id),
+    previousCalls(run.id),
   ]);
   const stats = statsFor(run, recs, exports.length);
   const editable = latestId === run.id;
@@ -67,8 +68,9 @@ export default async function ReviewPage({
               {stats.decided} of {recs.length} decided
             </span>
             {stats.overrides > 0 && <span className="chip-soft">{stats.overrides} overrides</span>}
-            <a className="small" href={`/api/runs/${run.id}/extract`}>Excel extract</a>
-            <Link className="small" href={`/runs/${run.id}/trends`}>Trends</Link>
+            <a className="chip-soft" href={`/api/runs/${run.id}/extract`}>Excel extract</a>
+            <Link className="chip-soft" href={`/runs/${run.id}/trends`}>Trends</Link>
+            <Link className="chip-soft" href="/learning">↻ What past runs taught us</Link>
           </div>
         </div>
         <div className="stack-sm" style={{ justifyItems: "end" }}>
@@ -91,7 +93,16 @@ export default async function ReviewPage({
           </span>
         </div>
       )}
-      <ReviewTable runId={run.id} recs={recs} editable={editable} initialFlag={initialFlag} initialPending={pending === "1"} />
+      <ReviewTable
+        key={q ?? ""}
+        runId={run.id}
+        recs={recs}
+        editable={editable}
+        initialFlag={initialFlag}
+        initialPending={pending === "1"}
+        initialQuery={q ?? ""}
+        previous={previous}
+      />
       {run.warnings.length > 0 && (
         <details className="card">
           <summary>

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
 import { int, num, pctChange } from "@/lib/format";
-import type { RecRow } from "@/lib/queries";
+import type { PreviousCall, RecRow } from "@/lib/queries";
 import { FLAG_LABEL, FLAGS, type Action, type Flag } from "@/lib/rules";
 import { FlagBadge } from "./Badges";
 
@@ -12,6 +12,8 @@ type Editing = { recId: number; kind: "CHANGE_QTY" | "HOLD"; qty: string; reason
 
 const FLAG_ORDER: Record<Flag, number> = { JUDGMENT: 0, STOCKOUT: 1, HIGH_DEMAND: 2, OVERSTOCK: 3, OK: 4 };
 const DECISION_LABEL = { APPROVE: "Approved", CHANGE_QTY: "Qty changed", HOLD: "Held" } as const;
+const shortDate = (d: string) =>
+  new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
 
 function recommendation(action: Action, qty: number | null, unit: string): string {
   switch (action) {
@@ -20,6 +22,20 @@ function recommendation(action: Action, qty: number | null, unit: string): strin
     case "NO_ACTION": return "No action";
     case "REVIEW": return "Your call";
   }
+}
+
+/** Worth a note only when last time ended in an order, a change or a hold. */
+const notable = (p: PreviousCall | undefined): p is PreviousCall => !!p && (p.decision !== "APPROVE" || (p.finalQty ?? 0) > 0);
+
+/** One line on what Raghav did with this SKU last time, so each run builds on the last. */
+function lastTime(p: PreviousCall): string {
+  const what =
+    p.decision === "APPROVE"
+      ? `approved ${p.finalQty}`
+      : p.decision === "HOLD"
+        ? "held"
+        : `changed ${p.suggestedQty ?? "–"} → ${p.finalQty ?? "–"}`;
+  return `Last time (${shortDate(p.runDate)}): ${what}${p.reason ? ` · “${p.reason}”` : ""}`;
 }
 
 async function post(url: string, body?: unknown) {
@@ -41,17 +57,22 @@ export function ReviewTable({
   editable,
   initialFlag,
   initialPending = false,
+  initialQuery = "",
+  previous = {},
 }: {
   runId: number;
   recs: RecRow[];
   editable: boolean;
   initialFlag: FlagFilter | null;
   initialPending?: boolean;
+  initialQuery?: string;
+  previous?: Record<string, PreviousCall>;
 }) {
   const router = useRouter();
+  const [view, setView] = useState<"board" | "table">("board");
   const [flag, setFlag] = useState<FlagFilter | null>(initialFlag);
   const [pendingOnly, setPendingOnly] = useState(initialPending);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "flag", dir: 1 });
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<Editing>(null);
@@ -102,6 +123,7 @@ export function ReviewTable({
   }
 
   const decide = (recId: number, body: object) => act(() => post(`/api/recommendations/${recId}/decision`, body));
+  const toggle = (id: number) => setOpen((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
 
   function header(key: SortKey, label: string, numeric = false) {
     const on = sort.key === key;
@@ -116,205 +138,277 @@ export function ReviewTable({
     );
   }
 
+  function reasonFeedback(r: RecRow) {
+    if (r.reasonSource !== "llm") return null;
+    return (
+      <div className="row small" style={{ gap: 6, marginTop: 6 }}>
+        <span className="tag">Claude</span>
+        <button
+          className="small link"
+          title="Tell us the reason text is wrong (feeds the AI kill criterion)"
+          onClick={() => act(() => post(`/api/recommendations/${r.id}/reason-feedback`, { wrong: !r.reasonMarkedWrong }))}
+        >
+          {r.reasonMarkedWrong ? "Marked wrong ✕" : "Reason wrong?"}
+        </button>
+      </div>
+    );
+  }
+
+  /** Raghav's call: the current decision, the three buttons, or the change / hold form. */
+  function decision(r: RecRow) {
+    const ed = editing?.recId === r.id ? editing : null;
+    return (
+      <>
+        {r.decision && !ed && (
+          <div>
+            <b>{DECISION_LABEL[r.decision.decision]}</b>
+            {r.decision.finalQty !== null && <> · {r.decision.finalQty}</>}
+            {r.decision.bulk && <span className="tag" style={{ marginLeft: 6 }}>bulk</span>}
+            {r.decision.reason && <div className="small">“{r.decision.reason}”</div>}
+            <div className="faint small">
+              {r.decision.decidedBy}, {new Date(r.decision.decidedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+              {r.decisionCount > 1 && ` · ${r.decisionCount} decisions logged`}
+            </div>
+          </div>
+        )}
+        {editable && !ed && (
+          <div className="row" style={{ gap: 6, marginTop: r.decision ? 8 : 0 }}>
+            {r.flag !== "JUDGMENT" && (
+              <button className={`small${r.decision ? "" : " primary"}`} disabled={busy} onClick={() => decide(r.id, { decision: "APPROVE" })}>
+                Approve
+              </button>
+            )}
+            <button className="small" disabled={busy} onClick={() => setEditing({ recId: r.id, kind: "CHANGE_QTY", qty: String(r.decision?.finalQty ?? r.suggestedQty ?? ""), reason: "" })}>
+              {r.flag === "JUDGMENT" ? "Set qty" : "Change qty"}
+            </button>
+            <button className="small" disabled={busy} onClick={() => setEditing({ recId: r.id, kind: "HOLD", qty: "", reason: "" })}>
+              Hold
+            </button>
+          </div>
+        )}
+        {ed && (
+          <form
+            className="stack-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              decide(r.id, ed.kind === "HOLD" ? { decision: "HOLD", reason: ed.reason } : { decision: "CHANGE_QTY", qty: ed.qty === "" ? null : Number(ed.qty), reason: ed.reason });
+            }}
+          >
+            {ed.kind === "CHANGE_QTY" && (
+              <label className="small">
+                Qty <input type="number" min={0} step={1} value={ed.qty} onChange={(e) => setEditing({ ...ed, qty: e.target.value })} autoFocus />
+              </label>
+            )}
+            <textarea
+              rows={2}
+              style={{ width: "100%" }}
+              placeholder={ed.kind === "HOLD" ? "Why hold? (required)" : "Why change? (required)"}
+              value={ed.reason}
+              onChange={(e) => setEditing({ ...ed, reason: e.target.value })}
+              autoFocus={ed.kind === "HOLD"}
+            />
+            <div className="row" style={{ gap: 6 }}>
+              <button className="small primary" type="submit" disabled={busy || !ed.reason.trim()}>
+                Save {ed.kind === "HOLD" ? "hold" : "qty"}
+              </button>
+              <button className="small" type="button" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </>
+    );
+  }
+
+  function numbers(r: RecRow) {
+    const n = r.numbers;
+    return (
+      <div className="grid cols-2">
+        <div>
+          <b>Rule fired:</b> {r.ruleFired}
+          <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {r.ruleTrace.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ol>
+        </div>
+        <div className="kv">
+          <span className="muted">4-week average / week</span><span>{num(n.avg4)}</span>
+          <span className="muted">12-week average / week</span><span>{num(n.avg12)} ({pctChange(n.ratio4to12)})</span>
+          <span className="muted">Stock on hand</span><span>{int(n.stockOnHand)}</span>
+          <span className="muted">Stock on order</span><span>{int(n.onOrder)}</span>
+          <span className="muted">Festival uplift</span><span>{n.isFestivalMonth ? `×${n.upliftFactor}` : "none"}</span>
+          <span className="muted">Expected demand / week</span><span>{num(n.forecastWeekly)}</span>
+          <span className="muted">Weeks of stock before uplift</span><span>{num(n.weeksOfStockRaw, 2)}</span>
+          <span className="muted">Weeks of cover after this order</span><span>{num(n.coverAfterOrder, 2)}</span>
+          <span className="muted">Standard reorder qty</span><span>{n.standardReorderQty}</span>
+          <span className="muted">Weeks of history</span><span>{n.weeksOfHistory}</span>
+          <span className="muted">Vendor (PO goes to)</span><span>{r.distributorName}</span>
+        </div>
+      </div>
+    );
+  }
+
+  function gauge(r: RecRow) {
+    const n = r.numbers;
+    const max = n.overstockAbove * 1.6;
+    const at = (x: number) => `${(Math.min(Math.max(x, 0), max) / max) * 100}%`;
+    return (
+      <div>
+        <div className="gauge-legend">
+          <span>Weeks of stock</span>
+          <b style={{ color: "var(--text)" }}>{num(n.weeksOfStock, 1)}</b>
+        </div>
+        <div className="gauge" aria-hidden>
+          <span className="band" style={{ left: at(n.stockoutBelow), width: `calc(${at(n.overstockAbove)} - ${at(n.stockoutBelow)})` }} />
+          {n.weeksOfStock !== null && <span className="mark" style={{ left: at(n.weeksOfStock) }} />}
+        </div>
+        <div className="faint small">healthy {n.stockoutBelow}–{n.overstockAbove} weeks</div>
+      </div>
+    );
+  }
+
   return (
     <div className="stack">
       <div className="row spread">
         <div className="chips" role="group" aria-label="Filter by flag">
           <button className={`chip${flag === null ? " on" : ""}`} onClick={() => setFlag(null)}>
-            All ({recs.length})
+            All {recs.length}
           </button>
           <button className={`chip${flag === "ORDER" ? " on" : ""}`} onClick={() => setFlag(flag === "ORDER" ? null : "ORDER")}>
-            Order now ({recs.filter((r) => r.action === "REORDER").length})
+            Order now {recs.filter((r) => r.action === "REORDER").length}
           </button>
           {FLAGS.map((f) => (
             <button key={f} className={`chip${flag === f ? " on" : ""}`} onClick={() => setFlag(flag === f ? null : f)}>
-              {FLAG_LABEL[f]} ({recs.filter((r) => r.flag === f).length})
+              {FLAG_LABEL[f]} {recs.filter((r) => r.flag === f).length}
             </button>
           ))}
         </div>
+      </div>
+      <div className="row spread">
         <div className="row">
+          <div className="seg" role="group" aria-label="View">
+            <button className={view === "board" ? "on" : undefined} onClick={() => setView("board")}>Board</button>
+            <button className={view === "table" ? "on" : undefined} onClick={() => setView("table")}>Table</button>
+          </div>
           <label className="small">
             <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} /> Pending only
           </label>
-          <input placeholder="Search SKU" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search SKU" />
-          {editable && (
-            <button
-              className="primary"
-              disabled={busy || bulkCandidates === 0}
-              onClick={() =>
-                act(async () => {
-                  const r = await post(`/api/runs/${runId}/bulk-approve`);
-                  setNotice(`Approved ${r.approved} rule-based item(s). Judgment items still need your call.`);
-                })
-              }
-            >
-              Bulk approve all rule-based items ({bulkCandidates})
-            </button>
-          )}
+          <input placeholder="Filter SKUs" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Filter SKUs" />
         </div>
+        {editable && (
+          <button
+            className="dark"
+            disabled={busy || bulkCandidates === 0}
+            onClick={() =>
+              act(async () => {
+                const r = await post(`/api/runs/${runId}/bulk-approve`);
+                setNotice(`Approved ${r.approved} rule-based item(s). Judgment items still need your call.`);
+              })
+            }
+          >
+            Bulk approve rule-based items ({bulkCandidates})
+          </button>
+        )}
       </div>
       {error && <div className="banner KILL">{error}</div>}
       {notice && <div className="banner CONTINUE">{notice}</div>}
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {header("sku", "SKU")}
-              {header("flag", "Flag")}
-              {header("qty", "Recommendation")}
-              {header("wos", "Weeks of stock", true)}
-              <th>Why</th>
-              {header("decision", "Raghav's call")}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const n = r.numbers;
-              const isOpen = open.has(r.id);
-              const ed = editing?.recId === r.id ? editing : null;
-              return (
+      {view === "board" ? (
+        <div className="board">
+          {rows.map((r) => (
+            <article key={r.id} className={`card pin sku-pin f-tone-${r.flag}`}>
+              <div className="top">
+                <div className="row">
+                  <FlagBadge flag={r.flag} />
+                  <span className="small faint">{r.skuId}{r.perishability === "High" ? " · perishable" : ""}</span>
+                </div>
+                <div className="sku-name">{r.skuName}</div>
+                <div className="rec">{recommendation(r.action as Action, r.suggestedQty, r.unitOfMeasure)}</div>
+                {gauge(r)}
+              </div>
+              <div className="body">
+                <div className="why">
+                  {r.reason}
+                  {r.alsoFlagged.length > 0 && <div className="faint small">Also: {r.alsoFlagged.map((f) => FLAG_LABEL[f]).join(", ")}</div>}
+                  {reasonFeedback(r)}
+                </div>
+                {notable(previous[r.skuId]) && (
+                  <div className="memo">
+                    <span className="ico" aria-hidden>↻</span>
+                    <span>{lastTime(previous[r.skuId]!)}</span>
+                  </div>
+                )}
+                <div className="call">{decision(r)}</div>
+                <button className="small link" onClick={() => toggle(r.id)} style={{ justifySelf: "start" }}>
+                  {open.has(r.id) ? "Hide numbers" : "Show numbers"}
+                </button>
+                {open.has(r.id) && <div className="small">{numbers(r)}</div>}
+              </div>
+            </article>
+          ))}
+          {!rows.length && <div className="card empty">No recommendations match the filter.</div>}
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {header("sku", "SKU")}
+                {header("flag", "Flag")}
+                {header("qty", "Recommendation")}
+                {header("wos", "Weeks of stock", true)}
+                <th>Why</th>
+                {header("decision", "Raghav's call")}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
                 <Fragment key={r.id}>
                   <tr>
                     <td>
                       <b>{r.skuId}</b>
                       <div className="muted small">{r.skuName}</div>
-                      <button
-                        className="small link"
-                        onClick={() => setOpen((s) => { const x = new Set(s); if (x.has(r.id)) x.delete(r.id); else x.add(r.id); return x; })}
-                      >
-                        {isOpen ? "Hide numbers" : "Show numbers"}
+                      <button className="small link" onClick={() => toggle(r.id)}>
+                        {open.has(r.id) ? "Hide numbers" : "Show numbers"}
                       </button>
                     </td>
                     <td>
                       <FlagBadge flag={r.flag} />
-                      {r.alsoFlagged.length > 0 && (
-                        <div className="muted small">also: {r.alsoFlagged.map((f) => FLAG_LABEL[f]).join(", ")}</div>
-                      )}
-                      {r.perishability === "High" && <div className="tag" style={{ display: "inline-block", marginTop: 4 }}>perishable</div>}
+                      {r.alsoFlagged.length > 0 && <div className="muted small">also: {r.alsoFlagged.map((f) => FLAG_LABEL[f]).join(", ")}</div>}
+                      {r.perishability === "High" && <div className="tag" style={{ display: "inline-block", marginTop: 6 }}>perishable</div>}
                     </td>
                     <td className="nowrap">
                       <b>{recommendation(r.action as Action, r.suggestedQty, r.unitOfMeasure)}</b>
                     </td>
                     <td className="n">
-                      <b>{num(n.weeksOfStock, 1)}</b>
-                      <div className="faint small">healthy {n.stockoutBelow}–{n.overstockAbove}</div>
+                      <b>{num(r.numbers.weeksOfStock, 1)}</b>
+                      <div className="faint small">healthy {r.numbers.stockoutBelow}–{r.numbers.overstockAbove}</div>
                     </td>
                     <td className="reason small">
                       {r.reason}
-                      {r.reasonSource === "llm" && (
-                        <div className="row small" style={{ gap: 6, marginTop: 4 }}>
-                          <span className="tag">Claude</span>
-                          <button
-                            className="small link"
-                            title="Tell us the reason text is wrong (feeds the AI kill criterion)"
-                            onClick={() => act(() => post(`/api/recommendations/${r.id}/reason-feedback`, { wrong: !r.reasonMarkedWrong }))}
-                          >
-                            {r.reasonMarkedWrong ? "Marked wrong ✕" : "Reason wrong?"}
-                          </button>
-                        </div>
-                      )}
+                      {reasonFeedback(r)}
+                      {notable(previous[r.skuId]) && <div className="faint small" style={{ marginTop: 6 }}>↻ {lastTime(previous[r.skuId]!)}</div>}
                     </td>
-                    <td className="decision">
-                      {r.decision && !ed && (
-                        <div>
-                          <b>{DECISION_LABEL[r.decision.decision]}</b>
-                          {r.decision.finalQty !== null && <> · {r.decision.finalQty}</>}
-                          {r.decision.bulk && <span className="tag"> bulk</span>}
-                          {r.decision.reason && <div className="small">“{r.decision.reason}”</div>}
-                          <div className="muted small">
-                            {r.decision.decidedBy}, {new Date(r.decision.decidedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
-                            {r.decisionCount > 1 && ` · ${r.decisionCount} decisions logged`}
-                          </div>
-                        </div>
-                      )}
-                      {editable && !ed && (
-                        <div className="row" style={{ gap: 4, marginTop: 4 }}>
-                          {r.flag !== "JUDGMENT" && (
-                            <button className="small" disabled={busy} onClick={() => decide(r.id, { decision: "APPROVE" })}>
-                              Approve
-                            </button>
-                          )}
-                          <button className="small" disabled={busy} onClick={() => setEditing({ recId: r.id, kind: "CHANGE_QTY", qty: String(r.decision?.finalQty ?? r.suggestedQty ?? ""), reason: "" })}>
-                            {r.flag === "JUDGMENT" ? "Set qty" : "Change qty"}
-                          </button>
-                          <button className="small" disabled={busy} onClick={() => setEditing({ recId: r.id, kind: "HOLD", qty: "", reason: "" })}>
-                            Hold
-                          </button>
-                        </div>
-                      )}
-                      {ed && (
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            decide(r.id, ed.kind === "HOLD" ? { decision: "HOLD", reason: ed.reason } : { decision: "CHANGE_QTY", qty: ed.qty === "" ? null : Number(ed.qty), reason: ed.reason });
-                          }}
-                        >
-                          {ed.kind === "CHANGE_QTY" && (
-                            <label className="small">
-                              Qty <input type="number" min={0} step={1} value={ed.qty} onChange={(e) => setEditing({ ...ed, qty: e.target.value })} autoFocus />
-                            </label>
-                          )}
-                          <textarea
-                            rows={2}
-                            style={{ width: "100%", marginTop: 4 }}
-                            placeholder={ed.kind === "HOLD" ? "Why hold? (required)" : "Why change? (required)"}
-                            value={ed.reason}
-                            onChange={(e) => setEditing({ ...ed, reason: e.target.value })}
-                            autoFocus={ed.kind === "HOLD"}
-                          />
-                          <div className="row" style={{ gap: 4 }}>
-                            <button className="small primary" type="submit" disabled={busy || !ed.reason.trim()}>
-                              Save {ed.kind === "HOLD" ? "hold" : "qty"}
-                            </button>
-                            <button className="small" type="button" onClick={() => setEditing(null)}>
-                              Cancel
-                            </button>
-                          </div>
-                        </form>
-                      )}
-                    </td>
+                    <td className="decision">{decision(r)}</td>
                   </tr>
-                  {isOpen && (
+                  {open.has(r.id) && (
                     <tr className="sub">
-                      <td colSpan={6}>
-                        <div className="grid cols-2">
-                          <div>
-                            <b>Rule fired:</b> {r.ruleFired}
-                            <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                              {r.ruleTrace.map((t) => (
-                                <li key={t}>{t}</li>
-                              ))}
-                            </ol>
-                          </div>
-                          <div className="kv">
-                            <span className="muted">4-week average / week</span><span>{num(n.avg4)}</span>
-                            <span className="muted">12-week average / week</span><span>{num(n.avg12)} ({pctChange(n.ratio4to12)})</span>
-                            <span className="muted">Stock on hand</span><span>{int(n.stockOnHand)}</span>
-                            <span className="muted">Stock on order</span><span>{int(n.onOrder)}</span>
-                            <span className="muted">Festival uplift</span><span>{n.isFestivalMonth ? `×${n.upliftFactor}` : "none"}</span>
-                            <span className="muted">Expected demand / week</span><span>{num(n.forecastWeekly)}</span>
-                            <span className="muted">Weeks of stock before uplift</span><span>{num(n.weeksOfStockRaw, 2)}</span>
-                            <span className="muted">Weeks of cover after this order</span><span>{num(n.coverAfterOrder, 2)}</span>
-                            <span className="muted">Standard reorder qty</span><span>{n.standardReorderQty}</span>
-                            <span className="muted">Weeks of history</span><span>{n.weeksOfHistory}</span>
-                            <span className="muted">Vendor (PO goes to)</span><span>{r.distributorName}</span>
-                          </div>
-                        </div>
-                      </td>
+                      <td colSpan={6}>{numbers(r)}</td>
                     </tr>
                   )}
                 </Fragment>
-              );
-            })}
-            {!rows.length && (
-              <tr>
-                <td colSpan={6} className="muted">No recommendations match the filter.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+              {!rows.length && (
+                <tr>
+                  <td colSpan={6} className="muted">No recommendations match the filter.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

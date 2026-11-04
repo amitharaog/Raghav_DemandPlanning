@@ -2,6 +2,7 @@
 
 import { getPool, withTransaction } from "./db";
 import { goesToPurchaseOrder, isOverride, validateDecision, type Decided, type DecisionInput } from "./decisions";
+import type { Fact } from "./feedback";
 import type { ReasonsReport } from "./reasons";
 import type { Flag, Numbers } from "./rules";
 import { buildPurchaseOrderLines, submitPurchaseOrders, type ApprovedLine } from "./zoho";
@@ -341,4 +342,77 @@ export async function getZohoStatus() {
   const { getZohoConnection, zohoConfigured } = await import("./zohoApi");
   const conn = await getZohoConnection();
   return { configured: zohoConfigured(), connected: !!conn, organizationName: conn?.organizationName ?? null };
+}
+
+// --- feedback loop -------------------------------------------------------------------
+
+/**
+ * One row per SKU per plan date, with Raghav's final call and what actually sold afterwards.
+ * Re-runs of the same date count once: the latest run where Raghav decided that SKU, else the latest run.
+ * "Afterwards" = the first up-to-4 Mon-Sun weeks starting with the run's own week.
+ */
+export async function getFeedbackFacts(): Promise<Fact[]> {
+  const { rows } = await getPool().query(
+    `select distinct on (ru.run_date, r.sku_id)
+            r.run_id, ru.run_date, r.sku_id, r.sku_name, r.flag, r.suggested_qty, r.reason_source, r.reason_marked_wrong,
+            (r.numbers->>'forecastWeekly')::float8 as forecast_weekly,
+            coalesce((r.numbers->>'isFestivalMonth')::boolean, false) as is_festival,
+            d.decision, d.final_qty, d.reason as d_reason, a.actual_weekly, a.weeks_observed
+       from recommendations r
+       join runs ru on ru.id = r.run_id and ru.status = 'completed'
+       left join lateral (select decision, final_qty, reason from decisions where recommendation_id = r.id order by id desc limit 1) d on true
+       left join lateral (
+         select avg(s.units_sold)::float8 as actual_weekly, count(*)::int as weeks_observed
+           from weekly_sales s
+          where s.sku_id = r.sku_id
+            and s.week_start >= ru.run_date - (extract(isodow from ru.run_date)::int - 1)
+            and s.week_start <  ru.run_date - (extract(isodow from ru.run_date)::int - 1) + 28
+       ) a on true
+      order by ru.run_date, r.sku_id, (d.decision is not null) desc, r.run_id desc`,
+  );
+  return rows.map((r) => ({
+    runId: r.run_id,
+    runDate: r.run_date,
+    skuId: r.sku_id,
+    skuName: r.sku_name,
+    flag: r.flag,
+    suggestedQty: r.suggested_qty,
+    decision: r.decision ?? null,
+    finalQty: r.final_qty ?? null,
+    decisionReason: r.d_reason ?? null,
+    reasonSource: r.reason_source,
+    reasonMarkedWrong: r.reason_marked_wrong,
+    isFestival: r.is_festival,
+    forecastWeekly: r.forecast_weekly,
+    actualWeekly: r.weeks_observed ? r.actual_weekly : null,
+    weeksObserved: r.weeks_observed ?? 0,
+  }));
+}
+
+export type PreviousCall = {
+  runId: number;
+  runDate: string;
+  decision: "APPROVE" | "CHANGE_QTY" | "HOLD";
+  suggestedQty: number | null;
+  finalQty: number | null;
+  reason: string | null;
+};
+
+/** Raghav's last decision on each SKU in an earlier run, shown next to this run's result. */
+export async function previousCalls(runId: number): Promise<Record<string, PreviousCall>> {
+  const { rows } = await getPool().query(
+    `select distinct on (r.sku_id) r.sku_id, r.run_id, ru.run_date, r.suggested_qty, d.decision, d.final_qty, d.reason
+       from recommendations r
+       join runs ru on ru.id = r.run_id and ru.status = 'completed'
+       join lateral (select decision, final_qty, reason from decisions where recommendation_id = r.id order by id desc limit 1) d on true
+      where r.run_id < $1
+      order by r.sku_id, r.run_id desc`,
+    [runId],
+  );
+  return Object.fromEntries(
+    rows.map((r) => [
+      r.sku_id,
+      { runId: r.run_id, runDate: r.run_date, decision: r.decision, suggestedQty: r.suggested_qty, finalQty: r.final_qty, reason: r.reason },
+    ]),
+  );
 }

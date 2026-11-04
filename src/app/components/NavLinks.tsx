@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Overview", match: (p: string) => p === "/" },
   { href: "/review", label: "Review", match: (p: string) => p === "/review" || /^\/runs\/\d+$/.test(p) },
   { href: "/trends", label: "Trends", match: (p: string) => p === "/trends" || p.endsWith("/trends") },
+  { href: "/learning", label: "Learning", match: (p: string) => p === "/learning" },
   { href: "/history", label: "History", match: (p: string) => p === "/history" },
 ];
 

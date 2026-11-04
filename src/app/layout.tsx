@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { Logo } from "./components/Logo";
 import { NavLinks } from "./components/NavLinks";
+import { SearchBox } from "./components/SearchBox";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,6 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Logo />
             </Link>
             <NavLinks />
+            <Suspense>
+              <SearchBox />
+            </Suspense>
           </div>
         </header>
         <main className="wrap">{children}</main>

@@ -24,8 +24,9 @@ rule result. Nothing is ordered without Raghav's approval.
 | 6. Zoho | `src/lib/zoho.ts` | Approved items only → Zoho Inventory PO import CSV. `submitPurchaseOrders()` is the one function to replace with the Zoho API. |
 | Run | `src/lib/run.ts` | Wires it all together. Used by "Run now", the schedule and the CLI. |
 | Kill switches | `src/lib/checks.ts`, `src/lib/killCriteria.ts` | Data checks halt a bad run; AI and pilot limits drive the kill call on the dashboard. |
+| Feedback loop | `src/lib/feedback.ts` | Checks each plan against what sold afterwards and against Raghav's calls, and suggests rule or SAP changes. |
 
-Pages: **Dashboard** (`/`), **Raghav's review** (`/runs/:id`), **Trends** (`/runs/:id/trends`), **Run history** (`/history`).
+Pages: **Overview** (`/`), **Raghav's review** (`/runs/:id`, board or table), **Trends** (`/runs/:id/trends`), **Learning** (`/learning`), **History** (`/history`).
 
 ## Run it locally
 
@@ -40,7 +41,7 @@ npm run load -- seed-data     # the real seed data
 npm run load -- seed-data/demo   # optional: 3 demo SKUs so all 5 flags appear
 npm run run:forecast -- --date 2026-10-22   # writes output/freshroots-extract-*.xlsx
 npm run build && npm start    # http://localhost:3000
-npm test                      # 65 tests, no database needed
+npm test                      # 84 tests, no database needed
 ```
 
 The seed data's stock is as of 2026-10-19, so runs must use a run date of
@@ -80,6 +81,23 @@ Applied in this order. Thresholds are in `src/lib/rules-config.ts`.
 - Otherwise **OK**, no action.
 
 Weeks of stock = (stock in hand + stock on order) ÷ expected weekly demand.
+
+## Feedback loop
+
+Each plan is checked twice after the fact (`/learning`):
+
+1. **Against sales.** Once SAP brings the weeks after a run, expected weekly demand is compared with
+   what sold in the first 4 weeks: average miss and bias, per plan and overall, plus the biggest misses.
+2. **Against Raghav.** For each rule: how often he approves, changes or holds it, and by how much he
+   changes quantities. SKUs he changes the same way run after run are listed.
+
+From these, `buildFeedback()` writes suggestions with the evidence and the exact edit, for example
+`rules-config.ts: highDemandQtyMultiplier 1.5 → 1.8` or a SKU's `Standard_Reorder_Qty` in SAP. Nothing
+is applied automatically: thresholds change only when someone edits `rules-config.ts`, so every run stays
+explainable. Suggestions need at least 5 decisions on a rule or 8 forecasts measured against sales.
+
+The loop also closes on the review page: each SKU shows what Raghav did with it last time (an order,
+a changed quantity or a hold, with his reason).
 
 ## Kill criteria
 
