@@ -416,3 +416,16 @@ export async function previousCalls(runId: number): Promise<Record<string, Previ
     ]),
   );
 }
+
+/** Total units sold per week, all SKUs, for the weeks up to and including `lastWeekStart`. */
+export async function weeklySalesTotals(lastWeekStart: string, weeks = 12): Promise<{ label: string; value: number }[]> {
+  const { rows } = await getPool().query(
+    `select iso_week, sum(units_sold)::int as units
+       from weekly_sales
+      where week_start <= $1::date and week_start > $1::date - $2::int * 7
+      group by iso_week, week_start
+      order by week_start`,
+    [lastWeekStart, weeks],
+  );
+  return rows.map((r) => ({ label: String(r.iso_week).slice(5), value: r.units }));
+}

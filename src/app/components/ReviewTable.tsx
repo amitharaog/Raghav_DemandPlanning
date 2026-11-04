@@ -69,7 +69,7 @@ export function ReviewTable({
   previous?: Record<string, PreviousCall>;
 }) {
   const router = useRouter();
-  const [view, setView] = useState<"board" | "table">("board");
+  const [view, setView] = useState<"board" | "table">("table");
   const [flag, setFlag] = useState<FlagFilter | null>(initialFlag);
   const [pendingOnly, setPendingOnly] = useState(initialPending);
   const [query, setQuery] = useState(initialQuery);
@@ -174,7 +174,7 @@ export function ReviewTable({
         {editable && !ed && (
           <div className="row" style={{ gap: 6, marginTop: r.decision ? 8 : 0 }}>
             {r.flag !== "JUDGMENT" && (
-              <button className={`small${r.decision ? "" : " primary"}`} disabled={busy} onClick={() => decide(r.id, { decision: "APPROVE" })}>
+              <button className={`small${r.decision || r.flag === "OK" ? "" : " primary"}`} disabled={busy} onClick={() => decide(r.id, { decision: "APPROVE" })}>
                 Approve
               </button>
             )}
@@ -289,8 +289,8 @@ export function ReviewTable({
       <div className="row spread">
         <div className="row">
           <div className="seg" role="group" aria-label="View">
-            <button className={view === "board" ? "on" : undefined} onClick={() => setView("board")}>Board</button>
             <button className={view === "table" ? "on" : undefined} onClick={() => setView("table")}>Table</button>
+            <button className={view === "board" ? "on" : undefined} onClick={() => setView("board")}>Cards</button>
           </div>
           <label className="small">
             <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} /> Pending only
@@ -299,7 +299,7 @@ export function ReviewTable({
         </div>
         {editable && (
           <button
-            className="dark"
+            className="primary"
             disabled={busy || bulkCandidates === 0}
             onClick={() =>
               act(async () => {

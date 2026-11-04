@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getPool } from "@/lib/db";
-import { int, istDateTime, nextScheduledRun } from "@/lib/format";
+import { int, istDateTime, nextScheduledRun, pctChange } from "@/lib/format";
 import { buildFeedback } from "@/lib/feedback";
 import { killCall, PILOT } from "@/lib/killCriteria";
 import {
@@ -14,14 +14,28 @@ import {
   lastZohoResults,
   listZohoExports,
   statsFor,
+  weeklySalesTotals,
 } from "@/lib/queries";
+import { FLAG_LABEL, type Flag } from "@/lib/rules";
+import { lastCompleteWeekStart } from "@/lib/snapshot";
 import { todayIST } from "@/lib/weeks";
-import { StatusBadge } from "./components/Badges";
+import { FlagBadge, StatusBadge } from "./components/Badges";
+import { AreaChart, Donut } from "./components/Charts";
 import { PilotOutcomeForm } from "./components/PilotOutcomeForm";
 import { RunNowButton } from "./components/RunNowButton";
 import { ZohoConnection, ZohoSendButtons } from "./components/ZohoPanel";
 
 export const dynamic = "force-dynamic";
+
+const FLAG_PARTS: { flag: Flag; color: string }[] = [
+  { flag: "STOCKOUT", color: "var(--critical)" },
+  { flag: "HIGH_DEMAND", color: "var(--info)" },
+  { flag: "OVERSTOCK", color: "var(--warning)" },
+  { flag: "JUDGMENT", color: "var(--judgment)" },
+  { flag: "OK", color: "var(--good)" },
+];
+const FLAG_RANK: Record<Flag, number> = { STOCKOUT: 0, HIGH_DEMAND: 1, JUDGMENT: 2, OVERSTOCK: 3, OK: 4 };
+const DECISION = { APPROVE: "Approved", CHANGE_QTY: "Changed", HOLD: "Held" } as const;
 
 const longDate = (d: string) =>
   new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -51,6 +65,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const zohoResults = run ? await lastZohoResults(run.id) : [];
   const sentToZoho = zohoResults.filter((r) => r.status !== "failed").length;
   const stats = run ? statsFor(run, recs, exports.length) : null;
+  const sales = run ? await weeklySalesTotals(lastCompleteWeekStart(run.runDate)) : [];
   const call = killCall(runs, outcomes, todayIST());
   const defaultDate = process.env.RUN_DATE_OVERRIDE?.trim() || todayIST();
 
@@ -61,7 +76,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <h1>{run ? `Plan for ${longDate(run.runDate)}` : "No plan yet"}</h1>
         <div className="meta">
           {run && <span className="chip-soft">Run #{run.id}</span>}
-          {recs[0]?.numbers.isFestivalMonth && <span className="chip-soft">Festival month · demand ×1.25</span>}
+          {recs[0]?.numbers.isFestivalMonth && <span className="chip-soft chip-accent">Festival month · demand ×1.25</span>}
           <span className="faint small">Next automatic run {istDateTime(nextScheduledRun().toISOString())} IST</span>
         </div>
       </div>
@@ -90,6 +105,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     recs.filter((r) => r.decision && r.decision.decision !== "HOLD" && (r.decision.finalQty ?? 0) > 0).map((r) => r.distributorName),
   ).size;
   const halted = latest && latest.status !== "completed" ? latest : null;
+  const attention = recs
+    .filter((r) => r.flag !== "OK")
+    .sort((a, b) => FLAG_RANK[a.flag] - FLAG_RANK[b.flag] || (a.numbers.weeksOfStock ?? 0) - (b.numbers.weeksOfStock ?? 0))
+    .slice(0, 8);
   const pilotIssues = call.checks.filter((c) => c.status === "watch" || c.status === "kill");
 
   return (
@@ -122,126 +141,213 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       )}
 
-      <section aria-labelledby="actions-title">
-        <div className="section-title">
-          <h2 id="actions-title">What this run recommends</h2>
-          <Link href={`/runs/${run.id}`} className="chip-soft">
-            See all {recs.length} SKUs →
-          </Link>
+      <section className="actions" aria-label="What this run recommends">
+        <Link className="action tone-order" href={`/runs/${run.id}?flag=ORDER`}>
+          <span className="label">Order now</span>
+          <span className="value">{toOrder.length}</span>
+          <span className="hint">
+            {int(unitsToOrder)} units · {count("STOCKOUT")} stockout, {count("HIGH_DEMAND")} high demand
+          </span>
+        </Link>
+        <Link className="action tone-pause" href={`/runs/${run.id}?flag=OVERSTOCK`}>
+          <span className="label">Pause next order</span>
+          <span className="value">{count("OVERSTOCK")}</span>
+          <span className="hint">Too much stock on hand</span>
+        </Link>
+        <Link className="action tone-call" href={`/runs/${run.id}?flag=JUDGMENT`}>
+          <span className="label">Raghav&apos;s call</span>
+          <span className="value">{count("JUDGMENT")}</span>
+          <span className="hint">New launch, missing data or mixed signals</span>
+        </Link>
+        <Link className="action tone-ok" href={`/runs/${run.id}?flag=OK`}>
+          <span className="label">On track</span>
+          <span className="value">{count("OK")}</span>
+          <span className="hint">No action needed</span>
+        </Link>
+      </section>
+
+      <section className="split">
+        <div className="card">
+          <div className="card-head">
+            <h2>Units sold per week, all SKUs</h2>
+            {sales.length > 1 && (
+              <span className="faint small">
+                last {sales.length} weeks · {pctChange(sales[sales.length - 1].value / sales[0].value)}
+              </span>
+            )}
+          </div>
+          <AreaChart points={sales} />
         </div>
-        <div className="actions">
-          <Link className="action tone-order" href={`/runs/${run.id}?flag=ORDER`}>
-            <span className="glyph" aria-hidden>!</span>
-            <span className="label">Order now</span>
-            <span className="value">{toOrder.length}</span>
-            <span className="hint">
-              {count("STOCKOUT")} stockout risk · {count("HIGH_DEMAND")} high demand · {int(unitsToOrder)} units
-            </span>
-            <span className="go" aria-hidden>→</span>
-          </Link>
-          <Link className="action tone-pause" href={`/runs/${run.id}?flag=OVERSTOCK`}>
-            <span className="glyph" aria-hidden>■</span>
-            <span className="label">Pause next order</span>
-            <span className="value">{count("OVERSTOCK")}</span>
-            <span className="hint">Too much stock on hand</span>
-            <span className="go" aria-hidden>→</span>
-          </Link>
-          <Link className="action tone-call" href={`/runs/${run.id}?flag=JUDGMENT`}>
-            <span className="glyph" aria-hidden>?</span>
-            <span className="label">Needs Raghav&apos;s call</span>
-            <span className="value">{count("JUDGMENT")}</span>
-            <span className="hint">New launch, missing data or mixed signals</span>
-            <span className="go" aria-hidden>→</span>
-          </Link>
-          <Link className="action tone-ok" href={`/runs/${run.id}?flag=OK`}>
-            <span className="glyph" aria-hidden>✓</span>
-            <span className="label">On track</span>
-            <span className="value">{count("OK")}</span>
-            <span className="hint">No action needed</span>
-            <span className="go" aria-hidden>→</span>
-          </Link>
+        <div className="card">
+          <div className="card-head">
+            <h2>This run&apos;s flags</h2>
+            <Link href={`/runs/${run.id}`} className="small">See all</Link>
+          </div>
+          <div className="donut-wrap">
+            <Donut total={recs.length} parts={FLAG_PARTS.map((f) => ({ value: count(f.flag), color: f.color }))} />
+            <div className="donut-legend">
+              {FLAG_PARTS.map((f) => (
+                <Link key={f.flag} href={`/runs/${run.id}?flag=${f.flag}`}>
+                  <i style={{ background: f.color }} />
+                  {FLAG_LABEL[f.flag]} <b>{count(f.flag)}</b>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="board" aria-label="Plan details">
-        <div className="card pin">
+      <section className="split-r">
+        <div className="card">
           <div className="card-head">
-            <div>
-              <h2>Raghav&apos;s review</h2>
-              <p className="muted small">Approve, change or hold each recommendation.</p>
-            </div>
+            <h2>Needs attention</h2>
+            <Link href={`/runs/${run.id}${pending ? "?pending=1" : ""}`} className="small">Open review →</Link>
           </div>
-          <div className="stack-sm">
-            <div className="row spread">
-              <span className="big-number">
-                {stats.decided}
-                <span className="faint" style={{ fontSize: 16, fontWeight: 600 }}> / {recs.length} decided</span>
-              </span>
-              {pending > 0 && <span className="pill s-watch"><span className="dot" />{pending} waiting</span>}
-            </div>
-            <div className="progress" aria-hidden>
-              <span style={{ width: pct(stats.approved), background: "var(--good)" }} />
-              <span style={{ width: pct(stats.changed), background: "var(--info)" }} />
-              <span style={{ width: pct(stats.held), background: "var(--warning)" }} />
-            </div>
-            <div className="legend">
-              <span><i style={{ background: "var(--good)" }} />Approved {stats.approved}</span>
-              <span><i style={{ background: "var(--info)" }} />Changed {stats.changed}</span>
-              <span><i style={{ background: "var(--warning)" }} />Held {stats.held}</span>
-            </div>
-            <Link className="btn primary" style={{ marginTop: 6 }} href={`/runs/${run.id}${pending ? "?pending=1" : ""}`}>
-              {pending ? "Continue review" : "Open review"}
-            </Link>
-          </div>
-        </div>
-
-        <div className="card pin">
-          <div className="card-head">
-            <div>
-              <h2>Purchase orders for Zoho</h2>
-              <p className="muted small">
-                Only approved items with a quantity go out{zoho.connected ? ", as drafts procurement still issues" : ""}.
-              </p>
-            </div>
-          </div>
-          {stats.poLines ? (
-            <div className="stats" style={{ marginBottom: 16 }}>
-              <div className="stat">
-                <div className="big-number">{stats.poLines}</div>
-                <div className="faint small">order lines</div>
-              </div>
-              <div className="stat">
-                <div className="big-number">{int(poUnits)}</div>
-                <div className="faint small">units</div>
-              </div>
-              <div className="stat">
-                <div className="big-number">{vendors}</div>
-                <div className="faint small">{vendors === 1 ? "vendor" : "vendors"}</div>
-              </div>
+          {attention.length ? (
+            <div style={{ overflowX: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Flag</th>
+                    <th>Recommendation</th>
+                    <th className="n">Weeks of stock</th>
+                    <th>Raghav</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attention.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <b>{r.skuId}</b>
+                        <div className="faint small">{r.skuName.replace(/^Freshroots /, "")}</div>
+                      </td>
+                      <td><FlagBadge flag={r.flag} /></td>
+                      <td className="nowrap">
+                        <b>{r.action === "REORDER" ? `Order ${int(r.suggestedQty)}` : r.action === "PAUSE" ? "Pause" : "Your call"}</b>
+                      </td>
+                      <td className="n">{r.numbers.weeksOfStock === null ? "–" : r.numbers.weeksOfStock.toFixed(1)}</td>
+                      <td className="nowrap">
+                        {r.decision ? (
+                          <span className="ok-text">✓ {DECISION[r.decision.decision]}{r.decision.decision === "CHANGE_QTY" && r.decision.finalQty !== null ? ` ${int(r.decision.finalQty)}` : ""}</span>
+                        ) : (
+                          <span className="pill s-watch"><span className="dot" />Waiting</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <p className="muted" style={{ marginBottom: 16 }}>Nothing approved yet. Approved orders will appear here.</p>
+            <p className="muted">Every SKU is on track. Nothing needs attention.</p>
           )}
-          <ZohoSendButtons runId={run.id} lines={stats.poLines} zoho={zoho} lastResults={zohoResults} />
-          <hr className="divider" />
-          <ZohoConnection zoho={zoho} />
         </div>
 
-        <Link className="card pin tone-info" href="/learning" style={{ background: "var(--info-bg)", color: "var(--text)" }}>
-          <div className="pin-title">
-            <h2>What the last runs taught us</h2>
-            <span aria-hidden>→</span>
-          </div>
-          <div className="stats" style={{ marginBottom: 12 }}>
-            <div className="stat" style={{ background: "var(--surface)" }}>
-              <div className="big-number">
-                {feedback.forecast.error === null ? "–" : `${Math.round(feedback.forecast.error * 100)}%`}
+        <div className="stack" style={{ gap: 16 }}>
+          <div className="card">
+            <div className="card-head">
+              <h2>Raghav&apos;s review</h2>
+            </div>
+            <div className="stack-sm">
+              <span className="big-number">
+                {stats.decided}
+                <span className="faint" style={{ fontSize: 14, fontWeight: 600 }}> / {recs.length} decided</span>
+              </span>
+              <div className="progress" aria-hidden>
+                <span style={{ width: pct(stats.approved), background: "var(--good)" }} />
+                <span style={{ width: pct(stats.changed), background: "var(--info)" }} />
+                <span style={{ width: pct(stats.held), background: "var(--warning)" }} />
               </div>
+              <p className="faint small">
+                {stats.approved} approved · {stats.changed} changed · {stats.held} held{pending ? ` · ${pending} waiting` : ""}
+              </p>
+              <Link className="btn primary" style={{ marginTop: 8 }} href={`/runs/${run.id}${pending ? "?pending=1" : ""}`}>
+                {pending ? "Continue review" : "Open review"}
+              </Link>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head">
+              <div>
+                <h2>Purchase orders in Zoho</h2>
+                <p className="faint small">
+                  {stats.poLines
+                    ? `${stats.poLines} lines · ${int(poUnits)} units · ${vendors} ${vendors === 1 ? "vendor" : "vendors"}`
+                    : "Nothing approved yet."}
+                </p>
+              </div>
+            </div>
+            <ZohoSendButtons runId={run.id} lines={stats.poLines} zoho={zoho} lastResults={zohoResults} />
+            <hr className="divider" />
+            <ZohoConnection zoho={zoho} />
+          </div>
+        </div>
+      </section>
+
+      <section className="card" aria-labelledby="flow-title">
+        <div className="card-head">
+          <h2 id="flow-title">How this plan was made</h2>
+          <span className="faint small">Started {istDateTime(run.startedAt)} IST</span>
+        </div>
+        <ol className="steps">
+          <li>
+            <span className="node">✓</span>
+            <span className="name">SAP data</span>
+            <span className="desc">
+              {data.skus} SKUs · stock as of {data.stockAsOf ? longDate(data.stockAsOf) : "–"}
+            </span>
+          </li>
+          <li>
+            <span className="node">✓</span>
+            <span className="name">Excel extract</span>
+            <span className="desc">{run.hasExtract ? <a href={`/api/runs/${run.id}/extract`}>Download .xlsx</a> : "–"}</span>
+          </li>
+          <li>
+            <span className="node">✓</span>
+            <span className="name">Trends</span>
+            <span className="desc"><Link href={`/runs/${run.id}/trends`}>4 vs 12 weeks</Link></span>
+          </li>
+          <li>
+            <span className="node">✓</span>
+            <span className="name">Forecast</span>
+            <span className="desc">Raghav&apos;s rules on {recs.length} SKUs</span>
+          </li>
+          <li>
+            <span className={`node ${pending ? "manual" : ""}`}>{pending ? "5" : "✓"}</span>
+            <span className="name">Raghav&apos;s call</span>
+            <span className="desc">{pending ? `${pending} waiting` : "All decided"}</span>
+          </li>
+          <li>
+            <span className={`node ${exports.length ? "" : "todo"}`}>{exports.length ? "✓" : "6"}</span>
+            <span className="name">Zoho POs</span>
+            <span className="desc">
+              {sentToZoho ? `${sentToZoho} draft PO${sentToZoho === 1 ? "" : "s"} in Zoho` : exports.length ? "CSV generated" : "Not sent yet"}
+            </span>
+          </li>
+          <li>
+            <span className="node manual">↻</span>
+            <span className="name">Feedback</span>
+            <span className="desc"><Link href="/learning">Feeds the next run</Link></span>
+          </li>
+        </ol>
+      </section>
+
+      <section className="grid cols-2">
+        <Link className="card pin" href="/learning">
+          <div className="pin-title">
+            <h2>What past runs taught us</h2>
+            <span className="small" style={{ color: "var(--accent)" }}>Learning →</span>
+          </div>
+          <div className="stats" style={{ marginBottom: 10 }}>
+            <div className="stat">
+              <div className="big-number">{feedback.forecast.error === null ? "–" : `${Math.round(feedback.forecast.error * 100)}%`}</div>
               <div className="faint small">forecast miss</div>
             </div>
-            <div className="stat" style={{ background: "var(--surface)" }}>
+            <div className="stat">
               <div className="big-number">{feedback.suggestions.length}</div>
-              <div className="faint small">suggestion{feedback.suggestions.length === 1 ? "" : "s"}</div>
+              <div className="faint small">suggested changes</div>
             </div>
           </div>
           <p className="small muted">
@@ -249,74 +355,22 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               ? feedback.suggestions[0].title
               : feedback.forecast.measured
                 ? "No rule changes suggested yet."
-                : `Waiting for sales after the run to check ${feedback.forecast.pending} forecasts.`}
+                : `Waiting for sales after each run to check ${feedback.forecast.pending} forecasts.`}
           </p>
         </Link>
 
-        <section className="card pin" aria-labelledby="flow-title">
-          <div className="card-head">
-            <h2 id="flow-title">How this plan was made</h2>
-            <span className="faint small">{istDateTime(run.startedAt)} IST</span>
-          </div>
-          <ol className="steps">
-            <li>
-              <span className="node">✓</span>
-              <span className="name">SAP data</span>
-              <span className="desc">
-                {data.skus} SKUs · stock as of {data.stockAsOf ? longDate(data.stockAsOf) : "–"}
-              </span>
-            </li>
-            <li>
-              <span className="node">✓</span>
-              <span className="name">Excel extract</span>
-              <span className="desc">{run.hasExtract ? <a href={`/api/runs/${run.id}/extract`}>Download .xlsx</a> : "–"}</span>
-            </li>
-            <li>
-              <span className="node">✓</span>
-              <span className="name">Trends</span>
-              <span className="desc"><Link href={`/runs/${run.id}/trends`}>4 vs 12 weeks</Link></span>
-            </li>
-            <li>
-              <span className="node">✓</span>
-              <span className="name">Forecast</span>
-              <span className="desc">Raghav&apos;s rules on {recs.length} SKUs</span>
-            </li>
-            <li>
-              <span className={`node ${pending ? "manual" : ""}`}>{pending ? "5" : "✓"}</span>
-              <span className="name">Raghav&apos;s call</span>
-              <span className="desc">{pending ? `${pending} waiting` : "All decided"}</span>
-            </li>
-            <li>
-              <span className={`node ${exports.length ? "" : "todo"}`}>{exports.length ? "✓" : "6"}</span>
-              <span className="name">Zoho POs</span>
-              <span className="desc">
-                {sentToZoho ? `${sentToZoho} draft PO${sentToZoho === 1 ? "" : "s"} in Zoho` : exports.length ? "CSV generated" : "Not sent yet"}
-              </span>
-            </li>
-            <li>
-              <span className="node manual">↻</span>
-              <span className="name">Feedback</span>
-              <span className="desc"><Link href="/learning">Sales and Raghav&apos;s calls feed the next run</Link></span>
-            </li>
-          </ol>
-        </section>
-
-        <details className="card pin">
+        <details className="card">
           <summary>
             <span className="row" style={{ gap: 10 }}>
               <h2>Pilot health</h2>
               <span className={`pill s-${call.verdict === "KILL" ? "kill" : call.verdict === "WATCH" ? "watch" : "ok"}`}>
                 <span className="dot" /> {call.verdict === "CONTINUE" ? "On track" : call.verdict === "WATCH" ? "Watch" : "Stop and fix"}
               </span>
+              {call.pilotDay && <span className="faint small">Day {call.pilotDay} of {PILOT.lengthDays}</span>}
             </span>
           </summary>
           <div className="stack">
-            {(call.pilotDay || pilotIssues.length > 0) && (
-              <p className="muted small">
-                {call.pilotDay && <>Day {call.pilotDay} of {PILOT.lengthDays}. </>}
-                {pilotIssues.map((c) => `${c.name}: ${c.value}`).join(" · ")}
-              </p>
-            )}
+            {pilotIssues.length > 0 && <p className="muted small">{pilotIssues.map((c) => `${c.name}: ${c.value}`).join(" · ")}</p>}
             <div style={{ overflowX: "auto" }}>
               <table>
                 <thead>
@@ -352,23 +406,23 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             </div>
           </div>
         </details>
-
-        {run.warnings.length > 0 && (
-          <details className="card pin">
-            <summary>
-              <span className="row" style={{ gap: 10 }}>
-                <h2>Notes on this data</h2>
-                <span className="chip-soft">{run.warnings.length}</span>
-              </span>
-            </summary>
-            <ul className="warn-list muted small">
-              {run.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          </details>
-        )}
       </section>
+
+      {run.warnings.length > 0 && (
+        <details className="card">
+          <summary>
+            <span className="row" style={{ gap: 10 }}>
+              <h2>Notes on this data</h2>
+              <span className="chip-soft">{run.warnings.length}</span>
+            </span>
+          </summary>
+          <ul className="warn-list muted small">
+            {run.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

@@ -21,7 +21,7 @@ export function SearchBox() {
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-4-4" />
       </svg>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search SKUs, e.g. mango or SKU011" aria-label="Search SKUs" />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search SKUs" aria-label="Search SKUs" />
     </form>
   );
 }
