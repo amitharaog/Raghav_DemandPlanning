@@ -1,19 +1,19 @@
-Name,SKU,Unit,Selling Price,Sales Account,Purchase Price,Purchase Account,Preferred Vendor
-Freshroots Mango Drink 200ml,SKU001,pcs,1,Sales,1,Cost of Goods Sold,NutriFlow Distributors
-Freshroots Oats Cookies 150g,SKU002,pcs,1,Sales,1,Cost of Goods Sold,NutriFlow Distributors
-Freshroots Brown Rice 1kg,SKU003,pcs,1,Sales,1,Cost of Goods Sold,GrainPath Logistics
-Freshroots Almond Milk 500ml,SKU004,pcs,1,Sales,1,Cost of Goods Sold,GrainPath Logistics
-Freshroots Mixed Nuts 100g,SKU005,pcs,1,Sales,1,Cost of Goods Sold,PeakSource Supply
-Freshroots Quinoa 500g,SKU006,pcs,1,Sales,1,Cost of Goods Sold,PeakSource Supply
-Freshroots Coconut Water 330ml,SKU007,pcs,1,Sales,1,Cost of Goods Sold,NutriFlow Distributors
-Freshroots Granola Bar 40g,SKU008,pcs,1,Sales,1,Cost of Goods Sold,GrainPath Logistics
-Freshroots Chia Seeds 200g,SKU009,pcs,1,Sales,1,Cost of Goods Sold,PeakSource Supply
-Freshroots Apple Cider Vinegar 500ml,SKU010,pcs,1,Sales,1,Cost of Goods Sold,Meridian Trade Co.
-Freshroots Multigrain Bread 400g,SKU011,pcs,1,Sales,1,Cost of Goods Sold,Meridian Trade Co.
-Freshroots Herbal Tea 25 bags,SKU012,pcs,1,Sales,1,Cost of Goods Sold,Meridian Trade Co.
-Freshroots Peanut Butter 300g,SKU013,pcs,1,Sales,1,Cost of Goods Sold,NutriFlow Distributors
-Freshroots Dark Chocolate 80g,SKU014,pcs,1,Sales,1,Cost of Goods Sold,GrainPath Logistics
-Freshroots Honey 500g,SKU015,pcs,1,Sales,1,Cost of Goods Sold,PeakSource Supply
-Freshroots Millet Chips 60g (DEMO),SKU016,pcs,1,Sales,1,Cost of Goods Sold,GrainPath Logistics
-Freshroots Jaggery Powder 500g (DEMO),SKU017,pcs,1,Sales,1,Cost of Goods Sold,Meridian Trade Co.
-Freshroots Masala Makhana 70g (DEMO),SKU018,pcs,1,Sales,1,Cost of Goods Sold,PeakSource Supply
+Name,SKU,Unit,Product Type,Item Type,Sellable,Purchasable,Selling Price,Sales Account,Purchase Price,Purchase Account,Purchase Description,Preferred Vendor
+Freshroots Mango Drink 200ml,SKU001,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Mango Drink 200ml (SKU001),NutriFlow Distributors
+Freshroots Oats Cookies 150g,SKU002,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Oats Cookies 150g (SKU002),NutriFlow Distributors
+Freshroots Brown Rice 1kg,SKU003,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Brown Rice 1kg (SKU003),GrainPath Logistics
+Freshroots Almond Milk 500ml,SKU004,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Almond Milk 500ml (SKU004),GrainPath Logistics
+Freshroots Mixed Nuts 100g,SKU005,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Mixed Nuts 100g (SKU005),PeakSource Supply
+Freshroots Quinoa 500g,SKU006,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Quinoa 500g (SKU006),PeakSource Supply
+Freshroots Coconut Water 330ml,SKU007,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Coconut Water 330ml (SKU007),NutriFlow Distributors
+Freshroots Granola Bar 40g,SKU008,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Granola Bar 40g (SKU008),GrainPath Logistics
+Freshroots Chia Seeds 200g,SKU009,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Chia Seeds 200g (SKU009),PeakSource Supply
+Freshroots Apple Cider Vinegar 500ml,SKU010,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Apple Cider Vinegar 500ml (SKU010),Meridian Trade Co.
+Freshroots Multigrain Bread 400g,SKU011,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Multigrain Bread 400g (SKU011),Meridian Trade Co.
+Freshroots Herbal Tea 25 bags,SKU012,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Herbal Tea 25 bags (SKU012),Meridian Trade Co.
+Freshroots Peanut Butter 300g,SKU013,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Peanut Butter 300g (SKU013),NutriFlow Distributors
+Freshroots Dark Chocolate 80g,SKU014,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Dark Chocolate 80g (SKU014),GrainPath Logistics
+Freshroots Honey 500g,SKU015,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Honey 500g (SKU015),PeakSource Supply
+Freshroots Millet Chips 60g (DEMO),SKU016,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Millet Chips 60g (DEMO) (SKU016),GrainPath Logistics
+Freshroots Jaggery Powder 500g (DEMO),SKU017,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Jaggery Powder 500g (DEMO) (SKU017),Meridian Trade Co.
+Freshroots Masala Makhana 70g (DEMO),SKU018,pcs,Goods,Sales and Purchases,TRUE,TRUE,1,Sales,1,Cost of Goods Sold,Freshroots Masala Makhana 70g (DEMO) (SKU018),PeakSource Supply
