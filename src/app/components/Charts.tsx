@@ -21,7 +21,7 @@ export function AreaChart({ points, height = 200 }: { points: { label: string; v
         const gy = 18 + (i * (h - 40)) / 3;
         return <line key={i} x1="0" x2={w} y1={gy} y2={gy} stroke="var(--border)" />;
       })}
-      <path d={`${line} L${x(points.length - 1)},${h - 22} L${x(0)},${h - 22} Z`} fill="rgb(74 222 128 / 0.12)" />
+      <path d={`${line} L${x(points.length - 1)},${h - 22} L${x(0)},${h - 22} Z`} fill="rgb(255 255 255 / 0.16)" />
       <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
       <circle cx={x(points.length - 1)} cy={y(last.value)} r="4.5" fill="var(--accent)" />
       {points.map((p, i) =>
